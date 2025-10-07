@@ -2114,6 +2114,8 @@ export default function SuperBankPage() {
 
   const [reportOpen, setReportOpen] = useState(false);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [selectedDownloadOption, setSelectedDownloadOption] = useState<'with-tags' | 'without-tags' | null>(null);
+  const [customFileName, setCustomFileName] = useState('');
 
   const [bankIdNameMap, setBankIdNameMap] = useState<{ [id: string]: string }>({});
   const [transactionsWithAccountInfo, setTransactionsWithAccountInfo] = useState<(Transaction & { AmountRaw?: number; 'Dr./Cr.'?: string })[]>([]);
@@ -3571,7 +3573,7 @@ export default function SuperBankPage() {
     }
   };
 
-  const handleDownloadTransactions = (includeTags: boolean) => {
+  const handleDownloadTransactions = (includeTags: boolean, customFileName?: string) => {
     const csvData = [];
     
     // Add header
@@ -3581,11 +3583,38 @@ export default function SuperBankPage() {
     }
     csvData.push(headers);
     
+    // Sort transactions by date (oldest to newest) for download
+    const sortedRowsForDownload = [...filteredRows].sort((a, b) => {
+      const getDateValue = (row: Transaction & { AmountRaw?: number; 'Dr./Cr.'?: string; bankName?: string }) => {
+        const dateField = row.Date || row['Transaction Date'] || row.date || row.createdAt;
+        if (typeof dateField === 'string') {
+          // Handle various date formats
+          const date = new Date(dateField);
+          return isNaN(date.getTime()) ? new Date('1970-01-01') : date;
+        }
+        if (typeof dateField === 'number') {
+          return new Date(dateField);
+        }
+        return new Date('1970-01-01');
+      };
+      
+      const dateA = getDateValue(a);
+      const dateB = getDateValue(b);
+      return dateA.getTime() - dateB.getTime(); // Oldest to newest
+    });
+    
     // Add data rows
-    filteredRows.forEach((row, index) => {
+    sortedRowsForDownload.forEach((row, index) => {
+      // Format date to DD/MM/YYYY using the shared utility
+      const formatDate = (dateStr: string | number | undefined): string => {
+        if (!dateStr || dateStr === 'N/A') return 'N/A';
+        const input = typeof dateStr === 'number' ? new Date(dateStr).toISOString().slice(0, 10) : String(dateStr);
+        return formatDateForCSV(input);
+      };
+
       const rowData = [
         index + 1,
-        row.Date || '',
+        formatDate((row.Date as string) || (row['Transaction Date'] as string) || (row.date as string)),
         row['Reference No.'] || '',
         row.Description || '',
         row.Amount || '',
@@ -3612,7 +3641,14 @@ export default function SuperBankPage() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `super-bank-transactions-${includeTags ? 'with-tags' : 'without-tags'}-${new Date().toISOString().split('T')[0]}.csv`);
+    
+    // Use custom filename if provided, otherwise use default
+    const defaultFileName = `super-bank-transactions-${includeTags ? 'complete' : 'clean'}-${new Date().toISOString().split('T')[0]}.csv`;
+    const fileName = customFileName && customFileName.trim() ? 
+      `${customFileName.trim()}.csv` : 
+      defaultFileName;
+    
+    link.setAttribute('download', fileName);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -4462,47 +4498,115 @@ export default function SuperBankPage() {
       />
 
       {/* Download Modal */}
-      <Modal isOpen={downloadModalOpen} onClose={() => setDownloadModalOpen(false)} title="Download Transactions">
-        <div className="p-6">
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">Choose Download Option</h3>
-            <p className="text-gray-600">Select whether to include tags in the downloaded file:</p>
+      <Modal isOpen={downloadModalOpen} onClose={() => {
+        setDownloadModalOpen(false);
+        setSelectedDownloadOption(null);
+        setCustomFileName('');
+      }} title="Download Transactions" maxWidthClass="max-w-md">
+        <div className="p-4">
+          <div className="mb-4">
+            <h3 className="text-base font-semibold text-gray-800 mb-1">Choose Download Format</h3>
+            <p className="text-sm text-gray-600">Select the format for your transaction export:</p>
           </div>
           
-          <div className="space-y-4">
+          <div className="space-y-3">
             <button
-              onClick={() => handleDownloadTransactions(true)}
-              className="w-full p-4 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors text-left"
+              onClick={() => setSelectedDownloadOption('with-tags')}
+              className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
+                selectedDownloadOption === 'with-tags'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 bg-white hover:bg-gray-50'
+              }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
+                <div className={`w-4 h-4 rounded-full border-2 ${
+                  selectedDownloadOption === 'with-tags'
+                    ? 'border-blue-500 bg-blue-500'
+                    : 'border-gray-300'
+                }`}>
+                  {selectedDownloadOption === 'with-tags' && (
+                    <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                  )}
+                </div>
                 <div>
-                  <div className="font-semibold text-blue-800">With Tags</div>
-                  <div className="text-sm text-blue-600">Download transactions including all tag information</div>
+                  <div className="font-semibold text-gray-800">Complete Export</div>
+                  <div className="text-xs text-gray-600">Includes all transaction data with tags</div>
                 </div>
               </div>
             </button>
             
             <button
-              onClick={() => handleDownloadTransactions(false)}
-              className="w-full p-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors text-left"
+              onClick={() => setSelectedDownloadOption('without-tags')}
+              className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
+                selectedDownloadOption === 'without-tags'
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-200 bg-white hover:bg-gray-50'
+              }`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-4 h-4 bg-gray-500 rounded-full"></div>
+                <div className={`w-4 h-4 rounded-full border-2 ${
+                  selectedDownloadOption === 'without-tags'
+                    ? 'border-green-500 bg-green-500'
+                    : 'border-gray-300'
+                }`}>
+                  {selectedDownloadOption === 'without-tags' && (
+                    <div className="w-full h-full rounded-full bg-white scale-50"></div>
+                  )}
+                </div>
                 <div>
-                  <div className="font-semibold text-gray-800">Without Tags</div>
-                  <div className="text-sm text-gray-600">Download transactions without tag information</div>
+                  <div className="font-semibold text-gray-800">Clean Export</div>
+                  <div className="text-xs text-gray-600">Basic transaction data without tags</div>
                 </div>
               </div>
             </button>
           </div>
           
-          <div className="mt-6 flex justify-end">
+          {/* File Name Input */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              File Name (Optional)
+            </label>
+            <input
+              type="text"
+              value={customFileName}
+              onChange={(e) => setCustomFileName(e.target.value)}
+              placeholder={`super-bank-transactions-${selectedDownloadOption === 'with-tags' ? 'complete' : 'clean'}-${new Date().toISOString().split('T')[0]}`}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Leave empty to use default filename
+            </p>
+          </div>
+          
+          <div className="mt-5 flex justify-end gap-2">
             <button
-              onClick={() => setDownloadModalOpen(false)}
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              onClick={() => {
+                setDownloadModalOpen(false);
+                setSelectedDownloadOption(null);
+                setCustomFileName('');
+              }}
+              className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
             >
               Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (selectedDownloadOption === 'with-tags') {
+                  handleDownloadTransactions(true, customFileName);
+                } else if (selectedDownloadOption === 'without-tags') {
+                  handleDownloadTransactions(false, customFileName);
+                }
+                setDownloadModalOpen(false);
+                setSelectedDownloadOption(null);
+                setCustomFileName('');
+              }}
+              disabled={!selectedDownloadOption}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download
             </button>
           </div>
         </div>
