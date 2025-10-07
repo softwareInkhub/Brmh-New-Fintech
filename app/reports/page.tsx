@@ -61,6 +61,16 @@ interface CashFlowGroup {
   isExpanded: boolean;
 }
 
+// Normalized shape for items coming from tags summary
+interface TagSummaryItem {
+  tagId: string;
+  tagName: string;
+  credit: number;
+  debit: number;
+  balance: number;
+  transactionCount?: number;
+}
+
 interface CashFlowSection {
   id: string;
   title: string;
@@ -380,12 +390,13 @@ export default function ReportsPage() {
   
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [filteredTagsSummary, setFilteredTagsSummary] = useState<typeof tagsSummary>(null);
+  const [isApplying, setIsApplying] = useState(false);
 
   const tagsSummaryMap = useMemo(() => {
-    const map = new Map<string, { credit: number; debit: number; balance: number }>();
-    const list = (filteredTagsSummary || tagsSummary)?.tags || [];
+    const map = new Map<string, { credit: number; debit: number; balance: number; transactionCount?: number }>();
+    const list = ((filteredTagsSummary || tagsSummary)?.tags || []) as TagSummaryItem[];
     for (const t of list) {
-      map.set(t.tagName.toLowerCase(), { credit: t.credit, debit: t.debit, balance: t.balance });
+      map.set(t.tagName.toLowerCase(), { credit: t.credit, debit: t.debit, balance: t.balance, transactionCount: t.transactionCount });
     }
     return map;
   }, [filteredTagsSummary, tagsSummary]);
@@ -397,6 +408,7 @@ export default function ReportsPage() {
       return;
     }
 
+    setIsApplying(true);
     try {
       const userId = localStorage.getItem('userId');
       if (!userId) return;
@@ -456,6 +468,8 @@ export default function ReportsPage() {
       console.error('❌ Error applying date filter:', error);
       setFilteredTagsSummary(null);
       // Don't re-throw the error to prevent console error overlay
+    } finally {
+      setIsApplying(false);
     }
   }, [tagsSummary, reportDateFilter]);
 
@@ -1365,15 +1379,8 @@ export default function ReportsPage() {
               return updateItem(item);
             });
 
-            // Keep tag-created items even if current balance is zero; only remove when tag deleted
-            const filteredItems = mappedItems.filter(it => {
-              if (!it?.createdByTag) return true;
-              const data = tagToData.get(it.particular);
-              // If tag no longer exists, remove the item
-              return !!data;
-            });
-
-            return { ...group, items: filteredItems };
+            // Do not remove items from state; we will filter at render time so reset can restore them
+            return { ...group, items: mappedItems };
           })
         }));
 
@@ -3067,14 +3074,27 @@ export default function ReportsPage() {
             {reportDateFilter.type !== 'all' && (
               <button
                 onClick={applyDateFilter}
-                className="px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white"
+                disabled={isApplying}
+                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 text-white ${isApplying ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'}`}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 ${isApplying ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
-                Apply Filter
+                {isApplying ? 'Applying…' : 'Apply Filter'}
               </button>
             )}
+
+            {/* Refresh Button */}
+            <button
+              onClick={() => typeof window !== 'undefined' && window.location.reload()}
+              className="px-3 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2 bg-gray-500 hover:bg-gray-600 text-white"
+              title="Refresh reports data"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M5 19A9 9 0 006 6m12 12a9 9 0 00-1-13" />
+              </svg>
+              Refresh
+            </button>
             
             {/* Reset Filter Button */}
             {reportDateFilter.type !== 'all' && (
@@ -3400,7 +3420,8 @@ export default function ReportsPage() {
                                   ? 'border-gray-600 hover:bg-gray-700' 
                                   : 'border-gray-200 hover:bg-gray-50'
                               }`}
-                              onClick={() => item.createdByTag ? openTagTransactions(item.particular) : undefined}
+                               style={filteredTagsSummary && item.createdByTag && !tagsSummaryMap.has(item.particular.toLowerCase()) ? { display: 'none' } : undefined}
+                               onClick={() => item.createdByTag ? openTagTransactions(item.particular) : undefined}
                               draggable={Boolean((item as unknown as { createdByTag?: boolean }).createdByTag)}
                               onDragStart={() => handleDragStartItem(cashFlowData[0].id, group.id, itemIndex)}
                               onDragOver={handleDragOver}
@@ -3630,6 +3651,7 @@ export default function ReportsPage() {
                              {/* Main Item */}
                              <tr
                                className={`border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 ${item.createdByTag ? 'cursor-pointer' : ''}`}
+                               style={filteredTagsSummary && item.createdByTag && !tagsSummaryMap.has(item.particular.toLowerCase()) ? { display: 'none' } : undefined}
                                onClick={() => item.createdByTag ? openTagTransactions(item.particular) : undefined}
                                draggable={Boolean((item as unknown as { createdByTag?: boolean }).createdByTag)}
                                onDragStart={() => handleDragStartItem(cashFlowData[1].id, group.id, itemIndex)}

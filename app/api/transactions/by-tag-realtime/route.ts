@@ -79,17 +79,14 @@ export async function GET(request: Request) {
         filterExpression += ' AND contains(tags, :tagName)';
         expressionAttributeValues[':tagName'] = tagName;
 
-        // Add date filter if specified
-        if (startDateTime && endDateTime) {
-          filterExpression += ' AND #date BETWEEN :startDate AND :endDate';
-          expressionAttributeValues[':startDate'] = startDateTime.toISOString();
-          expressionAttributeValues[':endDate'] = endDateTime.toISOString();
-        }
+        // NOTE: Do NOT add a DynamoDB BETWEEN on a single hard-coded date attribute here.
+        // Many rows store dates under different keys and formats. We will scan by userId+tag
+        // and then apply robust date parsing and filtering in code below.
 
         const scanParams: Record<string, unknown> = {
           FilterExpression: filterExpression,
           ExpressionAttributeValues: expressionAttributeValues,
-          ExpressionAttributeNames: startDateTime && endDateTime ? { '#date': 'Date' } : undefined
+          // No ExpressionAttributeNames for date; server-side filtering happens below.
         };
 
         const result = await brmhCrud.scan(tableName, scanParams);

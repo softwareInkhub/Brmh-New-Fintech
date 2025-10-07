@@ -120,8 +120,10 @@ export async function GET(request: Request) {
 // Helper function to parse transaction date from various field formats
 function parseTransactionDate(tx: Record<string, unknown>): Date | null {
   const possibleDateFields = [
+    'isoDate', // normalized by aggregation when available
     'Date', 'date', 'TransactionDate', 'transactionDate',
-    'TxnDate', 'txnDate', 'ValueDate', 'valueDate'
+    'TxnDate', 'txnDate', 'ValueDate', 'valueDate',
+    'Transaction Date', 'transaction date', 'Value Date', 'value date'
   ];
   
   for (const field of possibleDateFields) {
@@ -149,9 +151,9 @@ function parseTransactionDate(tx: Record<string, unknown>): Date | null {
             console.log(`📅 Parsed DD/MM/YYYY: ${dateValue} -> ${parsedDate.toISOString()}`);
           }
         }
-              } else if (typeof dateValue === 'number' || dateValue instanceof Date) {
+      } else if (typeof dateValue === 'number' || dateValue instanceof Date) {
         parsedDate = new Date(dateValue);
-                  } else {
+      } else {
         continue; // Skip invalid date values
       }
       

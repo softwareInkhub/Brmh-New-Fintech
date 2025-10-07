@@ -295,8 +295,40 @@ export async function recomputeAndSaveTagsSummary(userId: string): Promise<void>
               entry.statementIds.push(statementId);
             }
             
-            // Store the individual transaction for this tag
-            entry.transactions.push(tx);
+            // Store the individual transaction for this tag with normalized isoDate for reliable filtering
+            try {
+              const normalized = { ...tx } as Record<string, unknown>;
+              const possibleDateFields = [
+                'isoDate', 'Date', 'date', 'TransactionDate', 'transactionDate',
+                'TxnDate', 'txnDate', 'ValueDate', 'valueDate',
+                'Transaction Date', 'transaction date', 'Value Date', 'value date'
+              ];
+              let parsed: Date | null = null;
+              for (const field of possibleDateFields) {
+                const val = (tx as Record<string, unknown>)[field];
+                if (!val) continue;
+                if (typeof val === 'string') {
+                  const d1 = new Date(val);
+                  if (!isNaN(d1.getTime())) { parsed = d1; break; }
+                  const parts = val.split('/');
+                  if (parts.length === 3) {
+                    const day = parseInt(parts[0]);
+                    const month = parseInt(parts[1]);
+                    const year = parseInt(parts[2]);
+                    const fullYear = year < 50 ? 2000 + year : year < 100 ? 1900 + year : year;
+                    parsed = new Date(fullYear, month - 1, day);
+                    break;
+                  }
+                } else if (typeof val === 'number' || val instanceof Date) {
+                  const d2 = new Date(val as number | Date);
+                  if (!isNaN(d2.getTime())) { parsed = d2; break; }
+                }
+              }
+              if (parsed) normalized.isoDate = parsed.toISOString();
+              entry.transactions.push(normalized as TransactionItem);
+            } catch {
+              entry.transactions.push(tx);
+            }
             
             // Add bank breakdown data
             if (!entry.bankBreakdown[bankName]) {
