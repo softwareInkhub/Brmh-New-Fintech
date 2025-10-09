@@ -3,24 +3,32 @@ import { brmhCrud } from '../brmh-client';
 
 const TABLE_NAME = 'bank-header';
 
-// GET /api/bank-header?bankName=xxx
+// GET /api/bank-header?bankName=xxx or /api/bank-header?getAll=true
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const bankName = searchParams.get('bankName');
-  
-  if (!bankName) {
-    return NextResponse.json({ error: 'bankName is required' }, { status: 400 });
-  }
+  const getAll = searchParams.get('getAll');
   
   try {
-    const result = await brmhCrud.scan(TABLE_NAME, {
-      FilterExpression: 'id = :id',
-      ExpressionAttributeValues: { 
-        ':id': bankName
-      },
-      itemPerPage: 1  // Only fetch 1 item since we expect only one match
-    });
-    return NextResponse.json(result.items?.[0] || null);
+    if (getAll === 'true') {
+      // Get all bank headers
+      const result = await brmhCrud.scan(TABLE_NAME, {
+        itemPerPage: 100  // Get up to 100 banks
+      });
+      return NextResponse.json({ items: result.items || [] });
+    } else if (bankName) {
+      // Get specific bank header
+      const result = await brmhCrud.scan(TABLE_NAME, {
+        FilterExpression: 'id = :id',
+        ExpressionAttributeValues: { 
+          ':id': bankName
+        },
+        itemPerPage: 1  // Only fetch 1 item since we expect only one match
+      });
+      return NextResponse.json(result.items?.[0] || null);
+    } else {
+      return NextResponse.json({ error: 'bankName or getAll parameter is required' }, { status: 400 });
+    }
   } catch (error) {
     console.error('Error fetching bank header:', error);
     return NextResponse.json({ error: 'Failed to fetch bank header' }, { status: 500 });

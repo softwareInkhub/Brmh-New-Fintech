@@ -3421,7 +3421,7 @@ export default function ReportsPage() {
                                   : 'border-gray-200 hover:bg-gray-50'
                               }`}
                                style={filteredTagsSummary && item.createdByTag && !tagsSummaryMap.has(item.particular.toLowerCase()) ? { display: 'none' } : undefined}
-                               onClick={() => item.createdByTag ? openTagTransactions(item.particular) : undefined}
+                              onClick={() => item.createdByTag ? openTagTransactions(item.particular) : undefined}
                               draggable={Boolean((item as unknown as { createdByTag?: boolean }).createdByTag)}
                               onDragStart={() => handleDragStartItem(cashFlowData[0].id, group.id, itemIndex)}
                               onDragOver={handleDragOver}
