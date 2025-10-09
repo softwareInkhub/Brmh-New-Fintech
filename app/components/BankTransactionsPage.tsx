@@ -673,7 +673,7 @@ export default function BankTransactionsPage({ bankName }: BankTransactionsPageP
             })()}
 
             {/* Transaction Table Container - Matching Super Bank responsive design */}
-            <div className="flex-1 min-h-0 max-w-[65vw]" style={{ minHeight: '400px', maxHeight: 'calc(100vh - 400px)' }}>
+            <div className="flex-1 min-h-0 max-w-full" style={{ minHeight: '920px', maxHeight: 'calc(100vh - 180px)' }}>
               {transactionsError ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center p-8">

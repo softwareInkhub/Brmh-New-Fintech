@@ -1,5 +1,6 @@
     import { NextResponse } from 'next/server';
 import { brmhCrud, getBankTransactionTable } from '../../brmh-client';
+import { brmhDrive } from '../../brmh-drive-client';
 import { v4 as uuidv4 } from 'uuid';
 import Papa from 'papaparse';
 
@@ -17,6 +18,20 @@ export async function POST(request: Request) {
     // Get bank-specific table name
     const tableName = getBankTransactionTable(bankName);
     
+    // Resolve S3 URL automatically via BRMH Drive if not supplied
+    let resolvedS3Url: string = typeof s3FileUrl === 'string' ? s3FileUrl : '';
+    if (!resolvedS3Url && userId && statementId) {
+      try {
+        const dl = await brmhDrive.downloadFile(String(userId), String(statementId));
+        if (dl && typeof dl.downloadUrl === 'string') {
+          resolvedS3Url = dl.downloadUrl;
+        }
+      } catch (e) {
+        // Non-blocking: if we fail to resolve, continue without URL
+        console.warn('Auto-resolve s3FileUrl failed:', e instanceof Error ? e.message : String(e));
+      }
+    }
+
     // Parse CSV to array of objects
     const parsed = Papa.parse(csv, { header: true });
     const rows = parsed.data as Record<string, string>[];
@@ -112,7 +127,7 @@ export async function POST(request: Request) {
           accountNumber,
           fileName,
           userId,
-          s3FileUrl,
+          s3FileUrl: resolvedS3Url,
           now
         });
         

@@ -224,6 +224,8 @@ const SlicedPreviewModal: React.FC<{
 
 const StatementPreviewModal: React.FC<StatementPreviewModalProps> = ({ isOpen, onClose, s3FileUrl, statementId, bankId, accountId, accountNumber, fileName }) => {
   const [data, setData] = useState<string[][]>([]);
+  // Use the presigned download URL we fetch for preview as the effective S3 URL to store with transactions
+  const [effectiveS3Url, setEffectiveS3Url] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
@@ -261,6 +263,8 @@ const StatementPreviewModal: React.FC<StatementPreviewModalProps> = ({ isOpen, o
       .then((result) => {
         if (result.error) throw new Error(result.error);
         if (!result.downloadUrl) throw new Error('No download URL received');
+        // Store the presigned URL so we can persist it with transactions on slice
+        setEffectiveS3Url(result.downloadUrl);
         
         // Fetch the actual file content from the S3 URL
         return fetch(result.downloadUrl);
@@ -335,7 +339,8 @@ const StatementPreviewModal: React.FC<StatementPreviewModalProps> = ({ isOpen, o
           endRow,
           headerRow,
           fileName: fileName || '',
-          s3FileUrl: s3FileUrl || '',
+          // Prefer the presigned URL we resolved for preview; fallback to prop if provided
+          s3FileUrl: effectiveS3Url || s3FileUrl || '',
           userId: localStorage.getItem("userId") || "",
           bankName,
           accountName,

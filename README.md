@@ -102,9 +102,8 @@ Existing users will see a migration banner that allows them to move their files 
 # Required: Admin Configuration
 ADMIN_EMAIL=your-admin-email@gmail.com
 NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@gmail.com
-
-# Optional: Override BRMH backend URL (defaults to https://brmh.in)
-NEXT_PUBLIC_BACKEND_URL=https://brmh.in
+NEXT_PUBLIC_BACKEND_URL=https://brmh.in  # Optional: Override BRMH backend URL (defaults to https://brmh.in)
+BRMH_BACKEND_URL=https://brmh.in
 ```
 
 **Note**: No AWS credentials or setup required! All data operations are handled through BRMH backend services.

@@ -39,6 +39,10 @@ interface TransactionTableProps {
   onAccountFilter?: (accountNumber: string | 'clear') => void;
   availableBanks?: string[];
   availableAccounts?: Array<{ bankName: string; accountNumber: string; count: number }>;
+  // Controls scroll behavior to avoid affecting both SuperBank and Bank pages simultaneously
+  scrollBehavior?: 'inner' | 'page'; // 'page' = single page vertical scroll + horizontal; 'inner' = inner container vertical scroll
+  // Optional: limit inner container height (only applies when scrollBehavior==='inner')
+  tableMaxHeight?: number | string;
 }
 
 const DEFAULT_WIDTH = 120;
@@ -68,6 +72,8 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
   onAccountFilter,
   availableBanks = [],
   availableAccounts = [],
+  scrollBehavior = 'page',
+  tableMaxHeight,
 }) => {
   // Column widths state
   const [columnWidths, setColumnWidths] = useState<{ [header: string]: number }>(
@@ -184,10 +190,19 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
 
 
 
+  const useInnerScroll = scrollBehavior === 'inner';
+
   return (
-    <div className="flex flex-col" style={{ minHeight: '250px', maxHeight: 'calc(100vh - 350px)' }}>
-      {/* Table container with vertical scroll only */}
-             <div ref={tableScrollRef} className="flex-1 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded">
+    <div className="flex flex-col" style={{ minHeight: '250px' }}>
+      {/* Configurable scroll: 'page' uses only page vertical scroll, 'inner' keeps inner vertical scroll */}
+      <div
+        ref={tableScrollRef}
+        className={`flex-1 border border-gray-200 dark:border-gray-700 rounded ${useInnerScroll ? 'overflow-y-auto overflow-x-auto' : 'overflow-x-auto'}`}
+        style={useInnerScroll
+          ? (tableMaxHeight ? { maxHeight: typeof tableMaxHeight === 'number' ? `${tableMaxHeight}px` : tableMaxHeight } : undefined)
+          : { overflowY: 'visible' }
+        }
+      >
       {loading ? (
         <div className="flex items-center justify-center h-32 text-gray-500">
           <div className="text-center">
@@ -219,7 +234,10 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
           </div>
         </div>
       ) : (
-        <table className="w-full text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700" style={{ height: 'fit-content' }}>
+        <table
+          className="w-full text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700"
+          style={{ height: 'fit-content', minWidth: `${(headers.length + 2) * (DEFAULT_WIDTH / 1)}px` }}
+        >
           <colgroup>
             <col style={{ width: 40 }} />
             <col style={{ width: 40 }} />
@@ -631,6 +649,21 @@ const TransactionTable: React.FC<TransactionTableProps> = ({
                       ) : (
                         (() => {
                           const rowValue = row[sh];
+                          // If the value looks like a URL (e.g., s3 or http link), render as clickable anchor
+                          if (typeof rowValue === 'string' && /^https?:\/\//i.test(rowValue)) {
+                            const display = rowValue.length > 32 ? rowValue.slice(0, 32) + '…' : rowValue;
+                            return (
+                              <a
+                                href={rowValue}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline"
+                                title={rowValue}
+                              >
+                                {display}
+                              </a>
+                            );
+                          }
                           if (typeof rowValue === 'object' && rowValue !== null && 'name' in rowValue && 'id' in rowValue) {
                             return String((rowValue as unknown as Tag).name);
                           }

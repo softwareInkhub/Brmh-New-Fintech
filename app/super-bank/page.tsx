@@ -4460,6 +4460,8 @@ export default function SuperBankPage() {
             onAccountFilter={handleAccountFilter}
             availableBanks={availableBanks}
             availableAccounts={availableAccounts}
+            scrollBehavior={'inner'}
+            tableMaxHeight={"calc(100vh - 320px)"}
           />
           
           {/* Load More Button */}
