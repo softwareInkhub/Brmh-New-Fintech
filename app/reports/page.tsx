@@ -81,114 +81,15 @@ interface CashFlowSection {
 export default function ReportsPage() {
   const { theme } = useTheme();
 
-  // Initial data
-  const initialData: CashFlowSection[] = [
-    {
-      id: '1',
-      title: 'INFLOWS',
-      type: 'inflow',
-      groups: [
-        {
-          id: '1',
-          title: 'SALES SETTLEMENTS',
-          isExpanded: true,
-          items: [
-            { id: '1', particular: 'Online Sales', amount: 40000, type: 'inflow' },
-            { id: '2', particular: 'Offline Sales', amount: 10000, type: 'inflow' },
-          ]
-        },
-        {
-          id: '2',
-          title: 'ADDITIONAL CAPITAL',
-          isExpanded: false,
-          items: [
-            { id: '3', particular: 'Partner Investment', amount: 15000, type: 'inflow' },
-            { id: '4', particular: 'Bank Loan', amount: 5000, type: 'inflow' },
-          ]
-        },
-        {
-          id: '3',
-          title: 'BANK INTEREST',
-          isExpanded: false,
-          items: [
-            { id: '5', particular: 'Savings Interest', amount: 3000, type: 'inflow' },
-            { id: '6', particular: 'FD Interest', amount: 2000, type: 'inflow' },
-          ]
-        },
-        {
-          id: '4',
-          title: 'OTHER INCOME',
-          isExpanded: false,
-          items: [
-            { id: '7', particular: 'Commission Income', amount: 1000, type: 'inflow' },
-            { id: '8', particular: 'Miscellaneous', amount: 1000, type: 'inflow' },
-          ]
-        }
-      ]
-    },
-    {
-      id: '2',
-      title: 'OUTFLOWS',
-      type: 'outflow',
-      groups: [
-        {
-          id: '5',
-          title: '01. EXPENDITURES',
-          isExpanded: true,
-          items: [
-            { id: '9', particular: 'Production & Packaging', amount: 20000, type: 'outflow' },
-            { id: '10', particular: 'Marketing', amount: 15000, type: 'outflow' },
-            { id: '11', particular: 'Salaries & Payments', amount: 12000, type: 'outflow' },
-            { id: '12', particular: 'Logistics', amount: 8000, type: 'outflow' },
-            { id: '13', particular: 'Fixed Assets', amount: 10000, type: 'outflow' },
-          ]
-        },
-        {
-          id: '6',
-          title: '02. TAXATION',
-          isExpanded: false,
-          items: [
-            { id: '14', particular: 'GST Payments', amount: 8000, type: 'outflow' },
-            { id: '15', particular: 'TDS Payments', amount: 2000, type: 'outflow' },
-          ]
-        },
-        {
-          id: '7',
-          title: '03. INVESTMENTS',
-          isExpanded: false,
-          items: [
-            { id: '16', particular: 'RD', amount: 5000, type: 'outflow' },
-            { id: '17', particular: 'FD', amount: 10000, type: 'outflow' },
-          ]
-        },
-        {
-          id: '8',
-          title: '04. WITHDRAWALS AND OTHER PAYMENTS',
-          isExpanded: false,
-          items: [
-            { id: '18', particular: 'Cash Withdrawals', amount: 3000, type: 'outflow' },
-            { id: '19', particular: 'Other Withdrawals', amount: 2000, type: 'outflow' },
-          ]
-        }
-      ]
-    },
-    {
-      id: '3',
-      title: 'NET CASH FLOW',
-      type: 'net',
-      groups: []
-    }
-  ];
-
-  // Load data from localStorage or use initial data
+  // Load data from localStorage or use empty data for new users
   const [cashFlowData, setCashFlowData] = useState<CashFlowSection[]>(() => {
     if (typeof window !== 'undefined') {
       const userId = localStorage.getItem('userId');
       const key = userId ? `cashFlowData_${userId}` : 'cashFlowData';
       const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : initialData;
+      return saved ? JSON.parse(saved) : [];
     }
-    return initialData;
+    return [];
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -3310,6 +3211,50 @@ export default function ReportsPage() {
                     </tr>
                  </thead>
                 <tbody>
+                  {cashFlowData.length === 0 ? (
+                    <tr>
+                      <td colSpan={2} className="text-center py-12">
+                        <div className="flex flex-col items-center justify-center space-y-4">
+                          <div className="text-gray-400 text-6xl">📊</div>
+                          <h3 className="text-xl font-semibold text-gray-600 dark:text-gray-300">
+                            No Cash Flow Data Yet
+                          </h3>
+                          <p className="text-gray-500 dark:text-gray-400 text-center max-w-md">
+                            Start by adding your first inflow or outflow items to create your cash flow statement.
+                          </p>
+                          <button
+                            onClick={() => {
+                              // Initialize with empty structure
+                              setCashFlowData([
+                                {
+                                  id: '1',
+                                  title: 'INFLOWS',
+                                  type: 'inflow',
+                                  groups: []
+                                },
+                                {
+                                  id: '2', 
+                                  title: 'OUTFLOWS',
+                                  type: 'outflow',
+                                  groups: []
+                                },
+                                {
+                                  id: '3',
+                                  title: 'NET CASH FLOW',
+                                  type: 'net',
+                                  groups: []
+                                }
+                              ]);
+                            }}
+                            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            Start Building Your Cash Flow
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <>
                                      {/* INFLOWS Section */}
                                        <tr className={`border-b-2 ${theme === 'dark' ? 'border-gray-600' : 'border-gray-400'}`}>
                       <td className={`py-3 px-4 font-bold text-lg flex items-center justify-between ${
@@ -3317,7 +3262,7 @@ export default function ReportsPage() {
                           ? 'text-blue-300 bg-blue-900/30' 
                           : 'text-blue-700 bg-blue-50'
                       }`}>
-                       <span>{cashFlowData[0].title}</span>
+                         <span>{cashFlowData[0]?.title}</span>
                        {isEditing && (
                          <button
                            onClick={() => openAddGroupModal(cashFlowData[0].id)}
@@ -3814,6 +3759,8 @@ export default function ReportsPage() {
                        {(netFlow || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                      </td>
                    </tr>
+                    </>
+                  )}
                 </tbody>
               </table>
           </div>

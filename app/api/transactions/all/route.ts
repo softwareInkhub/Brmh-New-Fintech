@@ -15,12 +15,9 @@ export async function GET(request: Request) {
   }
   
   try {
-    // First, get user's banks and accounts to know which tables to scan and filter transactions
+    // First, get user's accounts and all banks to know which tables to scan and filter transactions
     const [banksResult, accountsResult, tagsResult] = await Promise.all([
-      brmhCrud.scan('banks', {
-        FilterExpression: 'userId = :userId',
-        ExpressionAttributeValues: { ':userId': userId }
-      }),
+      brmhCrud.scan('banks'), // Get all banks (admin-managed, no userId filter)
       brmhCrud.scan('accounts', {
         FilterExpression: 'userId = :userId',
         ExpressionAttributeValues: { ':userId': userId }

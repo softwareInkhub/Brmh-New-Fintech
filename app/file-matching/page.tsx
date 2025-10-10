@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { FiUpload, FiDownload, FiFileText, FiCheckCircle, FiXCircle, FiAlertCircle, FiBarChart, FiTrendingUp } from 'react-icons/fi';
+import { smartAutoMatch, normalizeDate, normalizeAmount, normalizeDescription } from '../utils/fileMatchingUtils';
 
 interface CSVData {
   headers: string[];
@@ -41,6 +42,7 @@ export default function FileMatchingPage() {
   const [activeTablesTab, setActiveTablesTab] = useState<'input' | 'output' | 'sideBySide'>('sideBySide');
   const [activeView, setActiveView] = useState<'analysis' | 'tables'>('analysis');
   const [showDifferencesByRow, setShowDifferencesByRow] = useState<Record<number, boolean>>({});
+  const [detectedMappings, setDetectedMappings] = useState<{ inputIndex: number; outputIndex: number; type: string; confidence: number }[]>([]);
   
   const inputFileRef = useRef<HTMLInputElement>(null);
   const outputFileRef = useRef<HTMLInputElement>(null);
@@ -111,238 +113,25 @@ export default function FileMatchingPage() {
       
       if (type === 'input') {
         setInputFile(csvData);
+        // Auto-detect mappings if output file already exists
+        if (outputFile) {
+          const autoMatchResults = smartAutoMatch(csvData, outputFile, 0.7);
+          setDetectedMappings(autoMatchResults.columnMappings);
+        }
       } else {
         setOutputFile(csvData);
+        // Auto-detect mappings if input file already exists
+        if (inputFile) {
+          const autoMatchResults = smartAutoMatch(inputFile, csvData, 0.7);
+          setDetectedMappings(autoMatchResults.columnMappings);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload file');
     }
   };
 
-  // Enhanced matching algorithm with better date/amount handling
-  const normalizeValue = (value: string, header: string): string => {
-    if (!value) return '';
-    
-    const normalized = value.toString().toLowerCase().trim();
-    
-    // Handle dates - normalize various date formats
-    if (header.toLowerCase().includes('date') || header.toLowerCase().includes('dt')) {
-      // Remove common separators and normalize to YYYYMMDD format
-      const cleanDate = normalized.replace(/[\/\-\.\s]/g, '');
-      
-      // Try to parse and normalize different date formats
-      if (cleanDate.length === 8) {
-        // DDMMYYYY or MMDDYYYY format
-        const day = cleanDate.substring(0, 2);
-        const month = cleanDate.substring(2, 4);
-        const year = cleanDate.substring(4, 8);
-        
-        // If day > 12, it's likely DDMMYYYY, otherwise MMDDYYYY
-        if (parseInt(day) > 12) {
-          return `${year}${month}${day}`; // Convert to YYYYMMDD
-        } else {
-          return `${year}${month}${day}`; // Keep as YYYYMMDD
-        }
-      }
-      
-      return cleanDate;
-    }
-    
-    // Handle amounts - remove currency symbols and normalize
-    if (header.toLowerCase().includes('amount') || header.toLowerCase().includes('balance') || 
-        header.toLowerCase().includes('withdraw') || header.toLowerCase().includes('deposit')) {
-      // Remove currency symbols, commas, spaces, and handle negative amounts
-      return normalized.replace(/[₹$,\s]/g, '').replace(/\(/g, '-').replace(/\)/g, '');
-    }
-    
-    // Handle reference numbers - remove common prefixes/suffixes and normalize
-    if (header.toLowerCase().includes('ref') || header.toLowerCase().includes('reference') || 
-        header.toLowerCase().includes('chq') || header.toLowerCase().includes('cheque')) {
-      return normalized.replace(/^(ref|reference|ref\.|ref\s+no\.?|chq|cheque|chq\.|cheque\s+no\.?)/i, '').trim();
-    }
-    
-    // Handle descriptions - normalize common variations
-    if (header.toLowerCase().includes('description') || header.toLowerCase().includes('narration') || 
-        header.toLowerCase().includes('particulars')) {
-      // Remove extra spaces and normalize common abbreviations
-      return normalized.replace(/\s+/g, ' ')
-        .replace(/\bimps\b/g, 'immediate payment service')
-        .replace(/\bneft\b/g, 'national electronic funds transfer')
-        .replace(/\brtgs\b/g, 'real time gross settlement')
-        .replace(/\bupi\b/g, 'unified payments interface');
-    }
-    
-    // Handle account numbers - remove spaces and normalize
-    if (header.toLowerCase().includes('account') || header.toLowerCase().includes('ac')) {
-      return normalized.replace(/\s+/g, '');
-    }
-    
-    return normalized;
-  };
 
-  // Calculate string similarity using Levenshtein distance
-  const calculateSimilarity = (str1: string, str2: string): number => {
-    if (str1 === str2) return 1;
-    if (str1.length === 0 || str2.length === 0) return 0;
-    
-    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
-    
-    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
-    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
-    
-    for (let j = 1; j <= str2.length; j++) {
-      for (let i = 1; i <= str1.length; i++) {
-        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
-        matrix[j][i] = Math.min(
-          matrix[j][i - 1] + 1,
-          matrix[j - 1][i] + 1,
-          matrix[j - 1][i - 1] + indicator
-        );
-      }
-    }
-    
-    const maxLength = Math.max(str1.length, str2.length);
-    return maxLength === 0 ? 1 : (maxLength - matrix[str2.length][str1.length]) / maxLength;
-  };
-
-  const findMatchingRows = (inputData: CSVData, outputData: CSVData): { 
-    matchResults: MatchResult[], 
-    outputOnlyRows: string[][],
-    summary: ComparisonSummary 
-  } => {
-    const results: MatchResult[] = [];
-    const usedOutputIndices = new Set<number>();
-    
-    // Find common columns for matching with better logic
-    const inputHeaders = inputData.headers.map(h => h.toLowerCase().trim());
-    const outputHeaders = outputData.headers.map(h => h.toLowerCase().trim());
-    
-    // Create column mapping with fuzzy matching
-    const columnMappings: { inputIndex: number, outputIndex: number, inputHeader: string, outputHeader: string }[] = [];
-    
-    inputHeaders.forEach((inputHeader, inputIndex) => {
-      outputHeaders.forEach((outputHeader, outputIndex) => {
-        // Exact match
-        if (inputHeader === outputHeader) {
-          columnMappings.push({ inputIndex, outputIndex, inputHeader, outputHeader });
-          return;
-        }
-        
-        // Partial match - check if one contains the other
-        if (inputHeader.includes(outputHeader) || outputHeader.includes(inputHeader)) {
-          columnMappings.push({ inputIndex, outputIndex, inputHeader, outputHeader });
-          return;
-        }
-        
-        // Fuzzy match for common variations
-        const inputKey = inputHeader.replace(/[^a-z0-9]/g, '');
-        const outputKey = outputHeader.replace(/[^a-z0-9]/g, '');
-        
-        if (inputKey === outputKey || 
-            (inputKey.length > 3 && outputKey.length > 3 && 
-             (inputKey.includes(outputKey) || outputKey.includes(inputKey)))) {
-          columnMappings.push({ inputIndex, outputIndex, inputHeader, outputHeader });
-        }
-      });
-    });
-    
-    if (columnMappings.length === 0) {
-      throw new Error('No matching columns found between the two files');
-    }
-    
-    // Process each input row
-    for (let inputIndex = 0; inputIndex < inputData.rows.length; inputIndex++) {
-      const inputRow = inputData.rows[inputIndex];
-      let bestMatch: { row: string[]; score: number; index: number } | null = null;
-      let matchType: 'exact' | 'partial' | 'no-match' = 'no-match';
-      let differences: string[] = [];
-
-      // Find best matching row in output data
-      for (let outputIndex = 0; outputIndex < outputData.rows.length; outputIndex++) {
-        const outputRow = outputData.rows[outputIndex];
-        let matchScore = 0;
-        const rowDifferences: string[] = [];
-
-        // Compare each mapped column
-        let totalComparisons = 0;
-        columnMappings.forEach(({ inputIndex: inputColIndex, outputIndex: outputColIndex, inputHeader, outputHeader }) => {
-          const inputValue = (inputRow[inputColIndex] || '').toString().trim();
-          const outputValue = (outputRow[outputColIndex] || '').toString().trim();
-          
-          if (inputValue || outputValue) {
-            totalComparisons++;
-            
-            const normalizedInput = normalizeValue(inputValue, inputHeader);
-            const normalizedOutput = normalizeValue(outputValue, outputHeader);
-            
-            if (normalizedInput === normalizedOutput) {
-              matchScore += 1;
-            } else if (normalizedInput && normalizedOutput) {
-              // Check for partial matches with different strategies
-              if (normalizedInput.includes(normalizedOutput) || normalizedOutput.includes(normalizedInput)) {
-                matchScore += 0.7;
-                rowDifferences.push(`${inputHeader}: "${inputValue}" vs "${outputValue}"`);
-              } else if (calculateSimilarity(normalizedInput, normalizedOutput) > 0.8) {
-                matchScore += 0.5;
-                rowDifferences.push(`${inputHeader}: "${inputValue}" vs "${outputValue}"`);
-              } else {
-                rowDifferences.push(`${inputHeader}: "${inputValue}" vs "${outputValue}"`);
-              }
-            }
-          }
-        });
-        
-        // Normalize score by total comparisons
-        const normalizedScore = totalComparisons > 0 ? matchScore / totalComparisons : 0;
-
-        // Update best match if this is better
-        if (normalizedScore > (bestMatch?.score || 0)) {
-          bestMatch = { row: outputRow, score: normalizedScore, index: outputIndex };
-          differences = rowDifferences;
-        }
-      }
-
-      // Determine match type based on normalized score
-      if (bestMatch) {
-        if (bestMatch.score >= 0.9) {
-          matchType = 'exact';
-        } else if (bestMatch.score >= 0.5) {
-          matchType = 'partial';
-        }
-        
-        // Mark this output row as used if it's a good match
-        if (bestMatch.score >= 0.5) {
-          usedOutputIndices.add(bestMatch.index);
-        }
-      }
-
-      results.push({
-        inputRow,
-        outputRow: bestMatch?.row || null,
-        isMatch: matchType !== 'no-match',
-        matchType,
-        differences,
-        inputRowIndex: inputIndex,
-        outputRowIndex: bestMatch?.index || null
-      });
-    }
-
-    // Find rows that exist only in output file
-    const outputOnlyRows = outputData.rows.filter((_, index) => !usedOutputIndices.has(index));
-
-    // Calculate summary
-    const summary: ComparisonSummary = {
-      totalInputRows: inputData.rows.length,
-      totalOutputRows: outputData.rows.length,
-      exactMatches: results.filter(r => r.matchType === 'exact').length,
-      partialMatches: results.filter(r => r.matchType === 'partial').length,
-      inputOnlyRows: results.filter(r => r.matchType === 'no-match').length,
-      outputOnlyRows: outputOnlyRows.length,
-      noMatches: results.filter(r => r.matchType === 'no-match').length
-    };
-
-    return { matchResults: results, outputOnlyRows, summary };
-  };
 
   const handleCompare = async () => {
     if (!inputFile || !outputFile) {
@@ -354,18 +143,102 @@ export default function FileMatchingPage() {
     setError(null);
 
     try {
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Use smart auto-matching with intelligent column mapping
+      const autoMatchResults = smartAutoMatch(inputFile, outputFile, 0.7); // 70% similarity threshold
       
-      const { matchResults: results, outputOnlyRows, summary } = findMatchingRows(inputFile, outputFile);
+      // Convert to the format expected by the UI
+      const results: MatchResult[] = [];
+      
+      // Process matched rows
+      autoMatchResults.matches.forEach(match => {
+        const inputRow = inputFile.rows[match.file1RowIndex];
+        const outputRow = outputFile.rows[match.file2RowIndex];
+        const similarity = match.similarity;
+        
+        // Determine match type based on similarity
+        let matchType: 'exact' | 'partial' | 'no-match' = 'no-match';
+        if (similarity >= 0.95) matchType = 'exact';
+        else if (similarity >= 0.7) matchType = 'partial';
+        
+        // Calculate differences based on mapped columns
+        const differences: string[] = [];
+        autoMatchResults.columnMappings.forEach(mapping => {
+          const inputVal = inputRow[mapping.inputIndex] || '';
+          const outputVal = outputRow[mapping.outputIndex] || '';
+          
+          // Normalize for comparison
+          let inputNorm = inputVal;
+          let outputNorm = outputVal;
+          
+          if (mapping.type === 'date') {
+            inputNorm = normalizeDate(inputVal);
+            outputNorm = normalizeDate(outputVal);
+          } else if (mapping.type === 'amount') {
+            inputNorm = normalizeAmount(inputVal).toString();
+            outputNorm = normalizeAmount(outputVal).toString();
+          } else if (mapping.type === 'description') {
+            inputNorm = normalizeDescription(inputVal);
+            outputNorm = normalizeDescription(outputVal);
+          }
+          
+          if (inputNorm !== outputNorm) {
+            differences.push(`${inputFile.headers[mapping.inputIndex]}: "${inputVal}" vs "${outputVal}"`);
+          }
+        });
+        
+        results.push({
+          inputRow,
+          outputRow,
+          isMatch: matchType !== 'no-match',
+          matchType,
+          differences,
+          inputRowIndex: match.file1RowIndex,
+          outputRowIndex: match.file2RowIndex
+        });
+      });
+      
+      // Add unmatched input rows
+      autoMatchResults.unmatchedFile1.forEach(index => {
+        results.push({
+          inputRow: inputFile.rows[index],
+          outputRow: null,
+          isMatch: false,
+          matchType: 'no-match',
+          differences: ['No matching row found in output file'],
+          inputRowIndex: index,
+          outputRowIndex: null
+        });
+      });
+      
+      // Collect output-only rows
+      const outputOnly = autoMatchResults.unmatchedFile2.map(index => outputFile.rows[index]);
+      
+      const summary: ComparisonSummary = {
+        totalInputRows: inputFile.rows.length,
+        totalOutputRows: outputFile.rows.length,
+        exactMatches: results.filter(r => r.matchType === 'exact').length,
+        partialMatches: results.filter(r => r.matchType === 'partial').length,
+        inputOnlyRows: autoMatchResults.unmatchedFile1.length,
+        outputOnlyRows: autoMatchResults.unmatchedFile2.length,
+        noMatches: results.filter(r => r.matchType === 'no-match').length
+      };
+      
       setMatchResults(results);
-      setOutputOnlyRows(outputOnlyRows);
+      setOutputOnlyRows(outputOnly);
       setComparisonSummary(summary);
+      setDetectedMappings(autoMatchResults.columnMappings);
+      
+      // Show detected column mappings in console for user reference
+      console.log('🎯 Auto-detected Column Mappings:');
+      autoMatchResults.columnMappings.forEach(m => {
+        console.log(`  ${inputFile.headers[m.inputIndex]} ➜ ${outputFile.headers[m.outputIndex]} (${m.type}, confidence: ${(m.confidence * 100).toFixed(0)}%)`);
+      });
+      
       // Auto-switch to the results tab and tables view
       setActiveMainTab('results');
       setActiveView('tables');
-    } catch {
-      setError('Failed to compare files');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to compare files');
     } finally {
       setIsProcessing(false);
     }
@@ -656,6 +529,41 @@ export default function FileMatchingPage() {
           </div>
         </div>
 
+            {/* Auto-Detected Column Mappings Info (shown after files are uploaded) */}
+            {inputFile && outputFile && detectedMappings.length > 0 && (
+              <div className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 border border-blue-200 shadow-sm animate-fadeIn">
+                <div className="flex items-center gap-2 mb-4">
+                  <FiCheckCircle className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-bold text-blue-900">✨ Auto-Detected Column Mappings</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {detectedMappings.map((mapping, idx) => (
+                    <div key={idx} className="bg-white rounded-lg p-3 shadow-sm border border-blue-100">
+                      <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide font-semibold">
+                        {mapping.type}
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-blue-600 font-medium truncate" title={inputFile.headers[mapping.inputIndex]}>
+                          {inputFile.headers[mapping.inputIndex]}
+                        </span>
+                        <span className="text-gray-400">→</span>
+                        <span className="text-purple-600 font-medium truncate" title={outputFile.headers[mapping.outputIndex]}>
+                          {outputFile.headers[mapping.outputIndex]}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-400">
+                        Confidence: {(mapping.confidence * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 text-xs text-blue-700 bg-blue-100 rounded px-3 py-2">
+                  💡 <strong>Smart Matching:</strong> The system automatically detected {detectedMappings.length} column mappings. 
+                  Date formats, amount formats, and text variations are normalized automatically for accurate matching.
+                </div>
+              </div>
+            )}
+
             {/* Compare Button */}
             <div className="flex justify-center mb-6">
               <button
@@ -672,7 +580,7 @@ export default function FileMatchingPage() {
                 ) : (
                   <>
                     <FiCheckCircle className="w-5 h-5 relative z-10" />
-                    <span className="relative z-10">Compare Files</span>
+                    <span className="relative z-10">🚀 Smart Auto-Match Files</span>
                   </>
                 )}
               </button>
