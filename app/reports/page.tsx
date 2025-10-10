@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { convertToISOFormat, formatDisplayDate } from '../utils/dateUtils';
 import { RiEdit2Line, RiBarChartLine, RiAddLine, RiArrowDownSLine, RiArrowRightSLine, RiCloseLine, RiDeleteBin6Line, RiSaveLine } from 'react-icons/ri';
 import { FiChevronDown } from 'react-icons/fi';
 import { Tag } from '../types/transaction';
@@ -877,58 +878,39 @@ export default function ReportsPage() {
     return 'absolute top-full left-0 mt-1 z-[9999]';
   };
 
-  // Function to format date consistently
+  // Function to format date consistently to dd/mm/yyyy
   const formatDate = (date: string | number | undefined): string => {
     if (!date || date === 'N/A') return 'N/A';
-    
-
-    
-    try {
-      // Handle different date formats
-      let dateObj: Date | undefined;
-      
-      if (typeof date === 'string') {
-        // Normalize IDFC dd-MMM-yyyy (e.g., 28-Feb-2025)
-        if (/^\d{2}-[A-Za-z]{3}-\d{4}$/.test(date)) {
-          const [dd, mon, yyyy] = date.split('-');
-          const months: { [k: string]: number } = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
-          const m = months[mon.toLowerCase()];
-          if (m !== undefined) {
-            dateObj = new Date(parseInt(yyyy), m, parseInt(dd));
-          }
-        } else if (date.match(/^\d{2}-\d{2}-\d{4}$/)) {
-          // If it's already in dd-mm-yyyy format, convert it properly
-          const [dd, mm, yyyy] = date.split('-');
-          dateObj = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
-        } else if (date.match(/^\d{2}\/\d{2}\/\d{2}$/)) {
-          const [dd, mm, yy] = date.split('/');
-          // Convert 2-digit year to 4-digit year
-          const yyyy = parseInt(yy) < 50 ? 2000 + parseInt(yy) : 1900 + parseInt(yy);
-          dateObj = new Date(yyyy, parseInt(mm) - 1, parseInt(dd));
-        } else if (date.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-          // If it's already in dd/mm/yyyy format
-          const [dd, mm, yyyy] = date.split('/');
-          dateObj = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
-        } else {
-          // Try standard Date constructor
-          dateObj = new Date(date);
-        }
-      } else {
-        dateObj = new Date(date);
-      }
-      
-      if (dateObj && !isNaN(dateObj.getTime())) {
-        const dd = String(dateObj.getDate()).padStart(2, '0');
-        const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const yyyy = dateObj.getFullYear();
-        const formatted = `${dd}/${mm}/${yyyy}`;
-        return formatted;
-      }
-    } catch {
-      // Date parsing failed
+    if (typeof date === 'number') {
+      const iso = new Date(date).toISOString().slice(0, 10);
+      return formatDisplayDate(iso);
     }
-    
-    return String(date);
+    const str = String(date).trim();
+    // Handle strings that include time, e.g. dd/mm/yyyy HH:MM:SS
+    const ddmmyyyyWithTime = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+    if (ddmmyyyyWithTime) {
+      const iso = convertToISOFormat(`${ddmmyyyyWithTime[1]}/${ddmmyyyyWithTime[2]}/${ddmmyyyyWithTime[3]}`);
+      return formatDisplayDate(iso);
+    }
+    // ISO at start
+    const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+      const iso = `${isoMatch[1]}-${isoMatch[2].padStart(2,'0')}-${isoMatch[3].padStart(2,'0')}`;
+      return formatDisplayDate(iso);
+    }
+    // Month name formats like 28-Feb-2025
+    if (/^\d{2}-[A-Za-z]{3}-\d{4}$/.test(str)) {
+      const [dd, mon, yyyy] = str.split('-');
+      const months: { [k: string]: number } = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
+      const m = months[mon.toLowerCase()];
+      if (m !== undefined) {
+        const iso = `${yyyy}-${String(m + 1).padStart(2,'0')}-${String(parseInt(dd)).padStart(2,'0')}`;
+        return formatDisplayDate(iso);
+      }
+    }
+    // Fallback: normalize then format
+    const iso = convertToISOFormat(str);
+    return formatDisplayDate(iso);
   };
 
   // Close dropdown when clicking outside
@@ -1130,54 +1112,16 @@ export default function ReportsPage() {
     // Apply date sorting
     if (dateSortOrder) {
       filtered.sort((a, b) => {
-        // Use the same date parsing logic as the formatDate function
-        const getDateValue = (dateStr: string | number | undefined): Date => {
-          if (!dateStr || dateStr === 'N/A') return new Date(0);
-          
-          try {
-            if (typeof dateStr === 'string') {
-              // Normalize IDFC dd-MMM-yyyy (e.g., 28-Feb-2025)
-              if (/^\d{2}-[A-Za-z]{3}-\d{4}$/.test(dateStr)) {
-                const [dd, mon, yyyy] = dateStr.split('-');
-                const months: { [k: string]: number } = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11 };
-                const m = months[mon.toLowerCase()];
-                if (m !== undefined) {
-                  return new Date(parseInt(yyyy), m, parseInt(dd));
-                }
-              } else if (dateStr.match(/^\d{2}\/\d{2}\/\d{2}$/)) {
-                // If it's already in dd/mm/yy format, convert it properly
-                const [dd, mm, yy] = dateStr.split('/');
-                const yyyy = parseInt(yy) < 50 ? 2000 + parseInt(yy) : 1900 + parseInt(yy);
-                return new Date(yyyy, parseInt(mm) - 1, parseInt(dd));
-              } else if (dateStr.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-                // If it's already in dd/mm/yyyy format
-                const [dd, mm, yyyy] = dateStr.split('/');
-                return new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
-              } else if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
-                // If it's in dd-mm-yyyy format
-                const [dd, mm, yyyy] = dateStr.split('-');
-                return new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
-              }
-            }
-            return new Date(dateStr);
-          } catch {
-            return new Date(0);
-          }
-        };
-        
-        const dateA = getDateValue(a.Date || a.date || ((a as Record<string, unknown>)['Transaction Date'] as string | number | undefined) || ((a as Record<string, unknown>)['Value Date'] as string | number | undefined));
-        const dateB = getDateValue(b.Date || b.date || ((b as Record<string, unknown>)['Transaction Date'] as string | number | undefined) || ((b as Record<string, unknown>)['Value Date'] as string | number | undefined));
-        
-
-        
-        if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) {
-          return 0; // Keep original order if dates are invalid
-        }
-        
+        const extract = (tx: TransactionData) => tx.Date || tx.date || (tx as Record<string, unknown>)['Transaction Date'] || (tx as Record<string, unknown>)['Value Date'];
+        const isoA = convertToISOFormat(String(extract(a) || ''));
+        const isoB = convertToISOFormat(String(extract(b) || ''));
+        const tA = new Date(isoA).getTime();
+        const tB = new Date(isoB).getTime();
+        if (isNaN(tA) || isNaN(tB)) return 0; // Keep original order if invalid
         if (dateSortOrder === 'newest') {
-          return dateB.getTime() - dateA.getTime(); // Newest first
+          return tB - tA; // Newest first
         } else {
-          return dateA.getTime() - dateB.getTime(); // Oldest first
+          return tA - tB; // Oldest first
         }
       });
     }
