@@ -4,6 +4,7 @@ import "./globals.css";
 import AppLayoutClient from "./components/AppLayoutClient";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { GlobalTabProvider } from "./contexts/GlobalTabContext";
+import AuthGuard from "./components/AuthGuard";
 
 
 const geistSans = Geist({
@@ -31,7 +32,9 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider>
           <GlobalTabProvider>
-            <AppLayoutClient>{children}</AppLayoutClient>
+            <AuthGuard>
+              <AppLayoutClient>{children}</AppLayoutClient>
+            </AuthGuard>
           </GlobalTabProvider>
         </ThemeProvider>
       </body>

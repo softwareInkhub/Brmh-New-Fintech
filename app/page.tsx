@@ -1,22 +1,22 @@
-
 'use client';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from './hooks/useAuth';
+
+// Global singleton to prevent multiple redirects
+let globalHasRedirected = false;
 
 export default function Home() {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
 
   useEffect(() => {
-    if (!isLoading) {
-      if (user) {
-        router.push('/dashboard');
-      } else {
-        router.push('/login-signup');
-      }
-    }
-  }, [user, isLoading, router]);
+    // Only redirect once using global flag
+    if (globalHasRedirected) return;
+    globalHasRedirected = true;
+    
+    // Use replace instead of push to avoid browser history issues
+    router.replace('/dashboard');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - run once only (router is stable)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 via-white to-purple-100">
