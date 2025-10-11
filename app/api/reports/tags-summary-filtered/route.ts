@@ -3,7 +3,19 @@ import { brmhCrud, TABLES } from '../../brmh-client';
 
 export const runtime = 'nodejs';
 
-// GET /api/reports/tags-summary-filtered?userId=xxx&filterType=month&month=5&year=2024
+/**
+ * GET /api/reports/tags-summary-filtered?userId=xxx&filterType=month&month=5&year=2024
+ * 
+ * This endpoint filters tags and their transactions based on date range.
+ * It only returns tags that have transactions within the specified date range.
+ * 
+ * Key Features:
+ * - Fetches data from brmh-fintech-user-reports table
+ * - Filters transactions by date using DD/MM/YYYY format (priority)
+ * - Only shows tags that have transactions in the filtered date range
+ * - Recalculates tag statistics (credit, debit, balance) based on filtered transactions
+ * - Excludes tags with no transactions in the date range
+ */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -66,8 +78,10 @@ export async function GET(request: Request) {
     }
 
     console.log(`📅 Date range: ${startDateTime.toISOString()} to ${endDateTime.toISOString()}`);
+    console.log(`📊 Total tags in summary: ${originalTagsSummary.tags.length}`);
 
     // Filter tags based on transactions in the date range
+    // Only show tags that have transactions in the filtered date range
     const filteredTags = [];
     
     for (const tag of originalTagsSummary.tags) {
@@ -78,22 +92,33 @@ export async function GET(request: Request) {
       }
 
       if (!tag.transactions || tag.transactions.length === 0) {
+        console.log(`📋 Tag "${tag.tagName}" has no transactions - skipping`);
         continue; // Skip tags with no transactions
       }
 
-      // Filter transactions by date
+      // Filter transactions by date using DD/MM/YYYY format
       const filteredTransactions = tag.transactions.filter((tx: Record<string, unknown>) => {
         const txDate = parseTransactionDate(tx);
-        if (!txDate) return false;
+        if (!txDate) {
+          console.log(`⚠️ Could not parse date for transaction:`, tx);
+          return false;
+        }
         
-        return txDate >= startDateTime && txDate <= endDateTime;
+        const isInRange = txDate >= startDateTime && txDate <= endDateTime;
+        if (isInRange) {
+          console.log(`✅ Transaction date ${txDate.toISOString()} is in range for tag "${tag.tagName}"`);
+        }
+        return isInRange;
       });
 
       // Only include tag if it has transactions in the date range
       if (filteredTransactions.length > 0) {
+        console.log(`📊 Tag "${tag.tagName}" has ${filteredTransactions.length} transactions in date range - including`);
         // Recalculate tag statistics based on filtered transactions
         const recalculatedTag = recalculateTagStats(tag, filteredTransactions);
         filteredTags.push(recalculatedTag);
+      } else {
+        console.log(`📋 Tag "${tag.tagName}" has no transactions in date range - excluding`);
       }
     }
 
@@ -117,56 +142,51 @@ export async function GET(request: Request) {
   }
 }
 
-// Helper function to parse transaction date from various field formats
+// Helper function to parse transaction date from superbank format
+// Prioritizes DD/MM/YYYY format as requested
 function parseTransactionDate(tx: Record<string, unknown>): Date | null {
-  const possibleDateFields = [
-    'isoDate', // normalized by aggregation when available
-    'Date', 'date', 'TransactionDate', 'transactionDate',
-    'TxnDate', 'txnDate', 'ValueDate', 'valueDate',
-    'Transaction Date', 'transaction date', 'Value Date', 'value date'
-  ];
+  // For superbank format, we have both 'date' and 'isoDate' fields
+  // Try isoDate first (most reliable), then date field
   
-  for (const field of possibleDateFields) {
-    const dateValue = tx[field];
-    if (dateValue) {
-      let parsedDate: Date;
+  if (tx.isoDate && typeof tx.isoDate === 'string') {
+    const parsedDate = new Date(tx.isoDate);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate;
+    }
+  }
+  
+  if (tx.date && typeof tx.date === 'string') {
+    const dateValue = tx.date;
+    
+    // First try DD/MM/YYYY format (priority as requested)
+    const parts = dateValue.split('/');
+    if (parts.length === 3) {
+      // Handle DD/MM/YYYY format
+      const day = parseInt(parts[0]);
+      const month = parseInt(parts[1]);
+      const year = parseInt(parts[2]);
       
-      if (typeof dateValue === 'string') {
-        // Try parsing as ISO string first
-        parsedDate = new Date(dateValue);
-        
-        // If that fails, try DD/MM/YYYY format
-        if (isNaN(parsedDate.getTime())) {
-          const parts = dateValue.split('/');
-          if (parts.length === 3) {
-            // Handle DD/MM/YYYY format
-            const day = parseInt(parts[0]);
-            const month = parseInt(parts[1]);
-            const year = parseInt(parts[2]);
-            
-            // Handle 2-digit years (assume 20xx if < 50, otherwise 19xx)
-            const fullYear = year < 50 ? 2000 + year : year < 100 ? 1900 + year : year;
-            
-            parsedDate = new Date(fullYear, month - 1, day);
-            console.log(`📅 Parsed DD/MM/YYYY: ${dateValue} -> ${parsedDate.toISOString()}`);
-          }
-        }
-      } else if (typeof dateValue === 'number' || dateValue instanceof Date) {
-        parsedDate = new Date(dateValue);
-      } else {
-        continue; // Skip invalid date values
-      }
+      // Handle 2-digit years (assume 20xx if < 50, otherwise 19xx)
+      const fullYear = year < 50 ? 2000 + year : year < 100 ? 1900 + year : year;
       
-      if (parsedDate && !isNaN(parsedDate.getTime())) {
+      const parsedDate = new Date(fullYear, month - 1, day);
+      if (!isNaN(parsedDate.getTime())) {
+        console.log(`📅 Parsed DD/MM/YYYY: ${dateValue} -> ${parsedDate.toISOString()}`);
         return parsedDate;
       }
+    }
+    
+    // If DD/MM/YYYY fails, try parsing as ISO string
+    const parsedDate = new Date(dateValue);
+    if (!isNaN(parsedDate.getTime())) {
+      return parsedDate;
     }
   }
   
   return null;
 }
 
-// Helper function to recalculate tag statistics based on filtered transactions
+// Helper function to recalculate tag statistics based on filtered superbank transactions
 function recalculateTagStats(originalTag: Record<string, unknown>, filteredTransactions: Record<string, unknown>[]): Record<string, unknown> {
   let credit = 0;
   let debit = 0;
@@ -181,14 +201,12 @@ function recalculateTagStats(originalTag: Record<string, unknown>, filteredTrans
       continue;
     }
 
-    // Extract amount and type
-    const { amount, type } = extractAmountAndType(tx);
+    // For superbank format, we have explicit cr and dr fields
+    const txCredit = typeof tx.cr === 'number' ? tx.cr : 0;
+    const txDebit = typeof tx.dr === 'number' ? tx.dr : 0;
     
-    if (type === 'CR') {
-      credit += amount;
-    } else if (type === 'DR') {
-      debit += amount;
-    }
+    credit += txCredit;
+    debit += txDebit;
 
     // Collect statement IDs
     if (tx.statementId && typeof tx.statementId === 'string') {
@@ -215,11 +233,8 @@ function recalculateTagStats(originalTag: Record<string, unknown>, filteredTrans
       accounts: Set<string>;
     };
 
-    if (type === 'CR') {
-      bankData.credit += amount;
-    } else if (type === 'DR') {
-      bankData.debit += amount;
-    }
+    bankData.credit += txCredit;
+    bankData.debit += txDebit;
     bankData.transactionCount++;
     bankData.balance = bankData.credit - bankData.debit;
 
@@ -254,45 +269,5 @@ function recalculateTagStats(originalTag: Record<string, unknown>, filteredTrans
   };
 }
 
-// Helper function to extract amount and type from transaction
-function extractAmountAndType(tx: Record<string, unknown>): { amount: number; type: 'CR' | 'DR' | '' } {
-  // Try to get amount from various fields
-  const amountFields = ['AmountRaw', 'Amount', 'amount', 'TransactionAmount', 'transactionAmount'];
-  let amount = 0;
-  
-  for (const field of amountFields) {
-    if (tx[field] !== undefined && tx[field] !== null) {
-      const value = tx[field];
-      if (typeof value === 'number') {
-        amount = Math.abs(value);
-        break;
-      } else if (typeof value === 'string') {
-        const cleaned = value.replace(/₹|,/g, '').trim();
-        const num = parseFloat(cleaned);
-        if (!isNaN(num)) {
-          amount = Math.abs(num);
-          break;
-        }
-      }
-    }
-  }
-
-  // Try to get CR/DR type from various fields
-  const typeFields = ['Dr./Cr.', 'Dr/Cr', 'DR/CR', 'Type', 'Cr/Dr', 'TransactionType'];
-  let type: 'CR' | 'DR' | '' = '';
-  
-  for (const field of typeFields) {
-    if (tx[field]) {
-      const value = tx[field].toString().trim().toUpperCase();
-      if (value === 'CR' || value === 'CREDIT') {
-        type = 'CR';
-        break;
-      } else if (value === 'DR' || value === 'DEBIT') {
-        type = 'DR';
-        break;
-      }
-    }
-  }
-
-  return { amount, type };
-}
+// Note: extractAmountAndType function removed since we now use superbank format
+// with explicit cr, dr, and type fields

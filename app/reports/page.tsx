@@ -2667,9 +2667,7 @@ export default function ReportsPage() {
     }
   };
 
-      // Cache for tag transactions to avoid repeated API calls
-  const tagTransactionsCacheRef = useRef<Map<string, { timestamp: number; data: TransactionData[] }>>(new Map());
-  const TAG_TRANSACTIONS_CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+      // No caching - fetch directly from brmh-fintech-user-reports table
 
       // Helper: open tag transactions modal by tag name – fetch from backend per-bank tables
   const openTagTransactions = useCallback(async (tagName: string, openInNewTab: boolean = false) => {
@@ -2713,107 +2711,50 @@ export default function ReportsPage() {
       setShowTagTransactionsModal(true); // open immediately
       console.log(`🎯 Modal opened for tag: ${tagName}`);
       
-      // Check cache first (with date filter consideration)
-      const now = Date.now();
-      const cacheKey = `${tagName}_${JSON.stringify(reportDateFilter)}`;
-      const cached = tagTransactionsCacheRef.current.get(cacheKey);
-      if (cached && (now - cached.timestamp) < TAG_TRANSACTIONS_CACHE_DURATION) {
-        console.log('Using cached transactions for tag:', tagName);
-        setActiveTagTransactions(cached.data);
-        setIsTagModalLoading(false);
-        return;
-      }
+      // No caching - fetch directly from brmh-fintech-user-reports table
       
       let txs: TransactionData[] = [];
       
       if (userId) {
-        // If no date filter, try cached endpoint first
+        // Use superbank format endpoints from brmh-fintech-user-reports table
         if (reportDateFilter.type === 'all') {
-          console.log(`🚀 No date filter - trying cached transactions for tag: ${tagName}`);
+          console.log(`🚀 No date filter - fetching all transactions for tag: ${tagName} from brmh-fintech-user-reports`);
           
-          const cachedUrl = `/api/transactions/by-tag-cached?userId=${encodeURIComponent(userId)}&tagName=${encodeURIComponent(tagName)}&limit=100`;
-          console.log(`🚀 Fetching cached transactions: ${cachedUrl}`);
+          const allTransactionsUrl = `/api/reports/tags-summary-all-transactions?userId=${encodeURIComponent(userId)}&tagName=${encodeURIComponent(tagName)}`;
+          console.log(`🚀 Fetching all transactions: ${allTransactionsUrl}`);
           
-          const cachedRes = await fetch(cachedUrl);
-          if (cachedRes.ok) {
-            txs = await cachedRes.json();
-            console.log(`✅ Loaded ${txs.length} cached transactions for tag: ${tagName}:`, txs);
+          const allRes = await fetch(allTransactionsUrl);
+          if (allRes.ok) {
+            txs = await allRes.json();
+            console.log(`✅ Loaded ${txs.length} all transactions for tag: ${tagName}:`, txs);
           } else {
-            console.log(`❌ Cached endpoint failed (${cachedRes.status}), trying real-time`);
+            console.log(`❌ All transactions endpoint failed (${allRes.status}):`, await allRes.text());
           }
         } else {
-          // Try filtered endpoint if date filter is active
-          console.log(`🚀 Trying filtered transactions for tag: ${tagName} with date filter: ${reportDateFilter.type}`);
+          // Date filter is active - fetch filtered transactions for this tag
+          console.log(`🚀 Date filter active - fetching filtered transactions for tag: ${tagName} with filter: ${reportDateFilter.type}`);
           
-          const filteredUrl = `/api/reports/tags-summary-filtered?userId=${encodeURIComponent(userId)}&filterType=${reportDateFilter.type}${
+          const filteredTransactionsUrl = `/api/reports/tags-summary-filtered-transactions?userId=${encodeURIComponent(userId)}&tagName=${encodeURIComponent(tagName)}&filterType=${reportDateFilter.type}${
             reportDateFilter.type === 'month' && reportDateFilter.month && reportDateFilter.year ? 
-              `&month=${reportDateFilter.month}&year=${reportDateFilter.year}` :
+              `&month=${reportDateFilter.month}&year=${reportDateFilter.year}` : 
             reportDateFilter.type === 'year' && reportDateFilter.year ? 
               `&year=${reportDateFilter.year}` :
             reportDateFilter.type === 'dateRange' && reportDateFilter.startDate && reportDateFilter.endDate ? 
               `&startDate=${reportDateFilter.startDate}&endDate=${reportDateFilter.endDate}` : ''
           }`;
+          console.log(`🚀 Fetching filtered transactions: ${filteredTransactionsUrl}`);
           
-          const filteredRes = await fetch(filteredUrl);
+          const filteredRes = await fetch(filteredTransactionsUrl);
           if (filteredRes.ok) {
-            const filteredData = await filteredRes.json();
-            const tagData = filteredData.tags?.find((t: Record<string, unknown>) => t.tagName && typeof t.tagName === 'string' && t.tagName.toLowerCase() === tagName.toLowerCase());
-            if (tagData && tagData.transactions) {
-              txs = tagData.transactions;
-              console.log(`✅ Loaded ${txs.length} filtered transactions for tag: ${tagName}`);
-            }
+            txs = await filteredRes.json();
+            console.log(`✅ Loaded ${txs.length} filtered transactions for tag: ${tagName}:`, txs);
+          } else {
+            console.log(`❌ Filtered transactions endpoint failed (${filteredRes.status}):`, await filteredRes.text());
           }
         }
         
-        // Fallback to real-time API if no data found
         if (txs.length === 0) {
-          console.log(`🚀 Trying real-time transactions for tag: ${tagName} with date filter`);
-          
-          const realtimeParams = new URLSearchParams({
-            userId,
-            tagName,
-            limit: '100'
-          });
-
-          // Only add date filter params if there's actually a date filter
-          if (reportDateFilter.type !== 'all') {
-            console.log(`📅 Adding date filter params to real-time API:`, reportDateFilter);
-            realtimeParams.append('filterType', reportDateFilter.type);
-            if (reportDateFilter.type === 'month' && reportDateFilter.month && reportDateFilter.year) {
-              realtimeParams.append('month', reportDateFilter.month.toString());
-              realtimeParams.append('year', reportDateFilter.year.toString());
-              console.log(`📅 Added month filter: ${reportDateFilter.month}/${reportDateFilter.year}`);
-            } else if (reportDateFilter.type === 'year' && reportDateFilter.year) {
-              realtimeParams.append('year', reportDateFilter.year.toString());
-              console.log(`📅 Added year filter: ${reportDateFilter.year}`);
-            } else if (reportDateFilter.type === 'dateRange' && reportDateFilter.startDate && reportDateFilter.endDate) {
-              realtimeParams.append('startDate', reportDateFilter.startDate);
-              realtimeParams.append('endDate', reportDateFilter.endDate);
-              console.log(`📅 Added date range filter: ${reportDateFilter.startDate} to ${reportDateFilter.endDate}`);
-            }
-          } else {
-            console.log(`📅 No date filter applied to real-time API (type: ${reportDateFilter.type})`);
-          }
-
-          const realtimeUrl = `/api/transactions/by-tag-realtime?${realtimeParams.toString()}`;
-          console.log(`🚀 Fetching from: ${realtimeUrl}`);
-          
-          const realtimeRes = await fetch(realtimeUrl);
-          if (realtimeRes.ok) {
-            txs = await realtimeRes.json();
-            console.log(`✅ Loaded ${txs.length} real-time filtered transactions for tag: ${tagName}:`, txs);
-          } else {
-            console.log(`❌ Real-time endpoint failed (${realtimeRes.status}):`, await realtimeRes.text());
-            
-            // Final fallback to cached endpoint
-            const cachedUrl = `/api/transactions/by-tag-cached?userId=${encodeURIComponent(userId)}&tagName=${encodeURIComponent(tagName)}&limit=100`;
-            const cachedRes = await fetch(cachedUrl);
-            
-            if (cachedRes.ok) {
-              txs = await cachedRes.json();
-              console.log(`✅ Loaded ${txs.length} cached transactions for tag: ${tagName}`);
-            }
-          }
+          console.log(`⚠️ No transactions found for tag "${tagName}" in brmh-fintech-user-reports table`);
         }
       }
       
@@ -2841,8 +2782,7 @@ export default function ReportsPage() {
             (tx.accountId && idToUserAccountNo[tx.accountId]) ||
             tx.accountNumber || tx.accountNo || tx.account || tx.account_id || tx.accountId || 'N/A'
         }));
-        // Cache the results with date filter consideration
-        tagTransactionsCacheRef.current.set(cacheKey, { timestamp: now, data: enriched });
+        // No caching - using direct database queries
         
         console.log(`🎯 Setting ${enriched.length} transactions for tag: ${tagName}:`, enriched);
         setActiveTagTransactions(enriched);
@@ -2852,7 +2792,7 @@ export default function ReportsPage() {
       setActiveTagTransactions([]);
       setIsTagModalLoading(false);
     }
-  }, [TAG_TRANSACTIONS_CACHE_DURATION, reportDateFilter]);
+  }, [reportDateFilter]);
 
   // Function to get transaction counts by bank (unused - kept for potential future use)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

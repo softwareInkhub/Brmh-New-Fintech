@@ -34,6 +34,154 @@ function toNumber(val: unknown): number {
   return 0;
 }
 
+// Function to create standardized superbank format transaction
+function createSuperbankTransaction(tx: TransactionItem, amountAbs: number, crdr: 'CR' | 'DR' | ''): Record<string, unknown> {
+  // Parse date from various formats
+  const possibleDateFields = [
+    'isoDate', 'Date', 'date', 'TransactionDate', 'transactionDate',
+    'TxnDate', 'txnDate', 'ValueDate', 'valueDate',
+    'Transaction Date', 'transaction date', 'Value Date', 'value date'
+  ];
+  
+  let parsedDate: Date | null = null;
+  let originalDate: string = '';
+  
+  for (const field of possibleDateFields) {
+    const val = (tx as Record<string, unknown>)[field];
+    if (!val) continue;
+    originalDate = String(val);
+    
+    if (typeof val === 'string') {
+      // First try DD/MM/YYYY format (priority to avoid MM/DD/YYYY ambiguity)
+      const parts = val.split('/');
+      if (parts.length === 3) {
+        const day = parseInt(parts[0]);
+        const month = parseInt(parts[1]);
+        const year = parseInt(parts[2]);
+        const fullYear = year < 50 ? 2000 + year : year < 100 ? 1900 + year : year;
+        
+        // Validate day and month ranges for DD/MM/YYYY
+        if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+          parsedDate = new Date(fullYear, month - 1, day);
+          if (!isNaN(parsedDate.getTime())) {
+            console.log(`📅 Parsed DD/MM/YYYY: ${val} -> ${parsedDate.toISOString()}`);
+            break;
+          }
+        }
+      }
+      
+      // Only try generic Date parsing if DD/MM/YYYY parsing failed
+      const d1 = new Date(val);
+      if (!isNaN(d1.getTime())) { 
+        parsedDate = d1; 
+        console.log(`📅 Parsed generic date: ${val} -> ${parsedDate.toISOString()}`);
+        break; 
+      }
+    } else if (typeof val === 'number' || val instanceof Date) {
+      const d2 = new Date(val as number | Date);
+      if (!isNaN(d2.getTime())) { 
+        parsedDate = d2; 
+        break; 
+      }
+    }
+  }
+
+  // Extract description/narration
+  const descriptionFields = [
+    'Narration', 'narration', 'Description', 'description', 
+    'Transaction Description', 'transactionDescription',
+    'Particulars', 'particulars', 'Remarks', 'remarks'
+  ];
+  
+  let description = '';
+  for (const field of descriptionFields) {
+    const val = (tx as Record<string, unknown>)[field];
+    if (val && typeof val === 'string' && val.trim()) {
+      description = val.trim();
+      break;
+    }
+  }
+
+  // Extract reference number
+  const refFields = [
+    'Chq./Ref.No.', 'Reference No.', 'Ref No.', 'Cheque No.', 'Cheque Number',
+    'Transaction ID', 'Txn ID', 'Reference', 'Ref'
+  ];
+  
+  let reference = '';
+  for (const field of refFields) {
+    const val = (tx as Record<string, unknown>)[field];
+    if (val && typeof val === 'string' && val.trim()) {
+      reference = val.trim();
+      break;
+    }
+  }
+
+  // Extract account information
+  const accountNumber = tx.accountNumber as string || 
+                       tx.AccountNumber as string || 
+                       tx.account_number as string || 
+                       tx.AccountNo as string || 
+                       tx.accountNo as string || '';
+
+  // Format date as DD/MM/YYYY with leading zeros
+  let formattedDate = originalDate;
+  if (parsedDate) {
+    const day = parsedDate.getDate().toString().padStart(2, '0');
+    const month = (parsedDate.getMonth() + 1).toString().padStart(2, '0');
+    const year = parsedDate.getFullYear();
+    formattedDate = `${day}/${month}/${year}`;
+    
+    console.log(`📅 Date formatting: ${originalDate} -> ${formattedDate} (parsed as: ${parsedDate.toISOString()})`);
+  } else {
+    console.warn(`⚠️ Could not parse date from: ${originalDate}`);
+  }
+
+  // Create superbank format transaction
+  const superbankTransaction = {
+    // Core superbank fields
+    id: tx.id || `superbank_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    date: formattedDate,
+    isoDate: parsedDate ? parsedDate.toISOString() : new Date().toISOString(),
+    description: description || 'Transaction',
+    reference: reference || '',
+    amount: amountAbs,
+    cr: crdr === 'CR' ? amountAbs : 0,
+    dr: crdr === 'DR' ? amountAbs : 0,
+    type: crdr, // 'CR' or 'DR'
+    
+    // Bank and account info
+    bankName: tx.bankName as string || 'Unknown',
+    bankId: tx.bankId as string || '',
+    accountName: tx.accountName as string || '',
+    accountNumber: accountNumber,
+    accountId: tx.accountId as string || '',
+    
+    // Additional metadata
+    statementId: tx.statementId as string || '',
+    fileName: tx.fileName as string || '',
+    createdAt: tx.createdAt as string || new Date().toISOString(),
+    userId: tx.userId as string || '',
+    
+    // Original transaction data (for reference)
+    originalTransaction: tx
+  };
+
+  console.log(`🔄 Created superbank transaction:`, {
+    id: superbankTransaction.id,
+    date: superbankTransaction.date,
+    originalDate: originalDate,
+    formattedDate: formattedDate,
+    amount: superbankTransaction.amount,
+    type: superbankTransaction.type,
+    cr: superbankTransaction.cr,
+    dr: superbankTransaction.dr,
+    description: superbankTransaction.description.substring(0, 50) + '...'
+  });
+
+  return superbankTransaction;
+}
+
 function extractAmountAndType(tx: TransactionItem): { amountAbs: number; crdr: 'CR' | 'DR' | '' } {
   // Debug: Log the first few transactions to see field structure
   const txId = tx.id;
@@ -295,38 +443,14 @@ export async function recomputeAndSaveTagsSummary(userId: string): Promise<void>
               entry.statementIds.push(statementId);
             }
             
-            // Store the individual transaction for this tag with normalized isoDate for reliable filtering
+            // Store the individual transaction in SUPERBANK FORMAT with explicit cr, dr, and amount fields
             try {
-              const normalized = { ...tx } as Record<string, unknown>;
-              const possibleDateFields = [
-                'isoDate', 'Date', 'date', 'TransactionDate', 'transactionDate',
-                'TxnDate', 'txnDate', 'ValueDate', 'valueDate',
-                'Transaction Date', 'transaction date', 'Value Date', 'value date'
-              ];
-              let parsed: Date | null = null;
-              for (const field of possibleDateFields) {
-                const val = (tx as Record<string, unknown>)[field];
-                if (!val) continue;
-                if (typeof val === 'string') {
-                  const d1 = new Date(val);
-                  if (!isNaN(d1.getTime())) { parsed = d1; break; }
-                  const parts = val.split('/');
-                  if (parts.length === 3) {
-                    const day = parseInt(parts[0]);
-                    const month = parseInt(parts[1]);
-                    const year = parseInt(parts[2]);
-                    const fullYear = year < 50 ? 2000 + year : year < 100 ? 1900 + year : year;
-                    parsed = new Date(fullYear, month - 1, day);
-                    break;
-                  }
-                } else if (typeof val === 'number' || val instanceof Date) {
-                  const d2 = new Date(val as number | Date);
-                  if (!isNaN(d2.getTime())) { parsed = d2; break; }
-                }
-              }
-              if (parsed) normalized.isoDate = parsed.toISOString();
-              entry.transactions.push(normalized as TransactionItem);
-            } catch {
+              // Create superbank format transaction
+              const superbankTransaction = createSuperbankTransaction(tx, amountAbs, crdr);
+              entry.transactions.push(superbankTransaction as TransactionItem);
+            } catch (error) {
+              console.error('Error creating superbank transaction:', error);
+              // Fallback to original transaction if superbank creation fails
               entry.transactions.push(tx);
             }
             
