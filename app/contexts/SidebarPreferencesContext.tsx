@@ -25,7 +25,8 @@ export const SidebarPreferencesProvider: React.FC<SidebarPreferencesProviderProp
 
     const load = async () => {
       try {
-        const result = await brmhCrud.get('fintech-entety', {
+        // Use scan to fetch by FilterExpression; get() only works with key lookup
+        const result = await brmhCrud.scan('fintech-entety', {
           FilterExpression: 'userId = :userId',
           ExpressionAttributeValues: { ':userId': userId }
         });

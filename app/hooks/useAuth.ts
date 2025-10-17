@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface User {
   userId: string;
@@ -33,6 +33,59 @@ export function useAuth() {
   });
   const [isLoading, setIsLoading] = useState(false); // AuthGuard handles loading
 
+  // Namespace to resolve IAM against (configurable)
+  const getNamespace = (): string => {
+    // Priority: env → localStorage → default "Fintech"
+    const envNs = (process.env.NEXT_PUBLIC_IAM_NAMESPACE || '').trim();
+    if (envNs) return envNs;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('iam_namespace');
+      if (stored && stored.trim()) return stored.trim();
+    }
+    return 'Fintech';
+  };
+
+  // Load role/permissions from IAM and persist
+  const loadIamForUser = useCallback(async (userId: string) => {
+    try {
+      const namespace = getNamespace();
+
+      // 1) Fetch role + permissions for namespace
+      const roleRes = await fetch(
+        `https://brmh.in/namespace-roles/${encodeURIComponent(userId)}/${encodeURIComponent(namespace)}`
+      );
+      if (roleRes.ok) {
+        const roleData = await roleRes.json();
+        const resolvedRole = roleData.role || 'user';
+        const resolvedPermissions: string[] = Array.isArray(roleData.permissions) ? roleData.permissions : [];
+
+        // If API says admin or permissions indicate full access, elevate to admin
+        const isAdmin = resolvedRole === 'admin' || resolvedRole === 'superadmin' || resolvedPermissions.includes('crud:all');
+        const finalRole = isAdmin ? 'admin' : resolvedRole;
+
+        localStorage.setItem('userRole', finalRole);
+        localStorage.setItem('userPermissions', JSON.stringify(resolvedPermissions));
+        localStorage.setItem('iam_namespace', namespace);
+
+        setUser(prev => prev ? { ...prev, role: finalRole, permissions: resolvedPermissions } : prev);
+      }
+
+      // 2) Optionally preflight a permission check (kept minimal - can be expanded by call-sites)
+      // This verifies endpoint availability and returns canonical permission resolution
+      await fetch(
+        `https://brmh.in/namespace-roles/${encodeURIComponent(userId)}/${encodeURIComponent(namespace)}/check-permissions`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requiredPermissions: ['read:files'] })
+        }
+      ).catch(() => void 0);
+    } catch (e) {
+      // Non-fatal - fall back to locally cached role/permissions
+      console.warn('IAM load failed:', e);
+    }
+  }, []);
+
   useEffect(() => {
     const checkAuth = () => {
       // Prevent multiple loads
@@ -61,6 +114,8 @@ export function useAuth() {
             role,
             permissions
           });
+          // Kick off IAM resolution in background
+          loadIamForUser(userId);
         } else {
           setUser(null);
         }
@@ -84,7 +139,7 @@ export function useAuth() {
 
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+  }, [loadIamForUser]);
 
   const login = (userData: User) => {
     localStorage.setItem('userId', userData.userId);
@@ -94,6 +149,8 @@ export function useAuth() {
     if (userData.role) localStorage.setItem('userRole', userData.role);
     if (userData.permissions) localStorage.setItem('userPermissions', JSON.stringify(userData.permissions));
     setUser(userData);
+    // Resolve IAM immediately after login
+    loadIamForUser(userData.userId);
   };
 
   const logout = () => {
@@ -134,6 +191,29 @@ export function useAuth() {
     return user?.role === 'admin';
   };
 
+  // Programmatic permission check against backend (uses IAM endpoint)
+  const checkPermissions = async (requiredPermissions: string[], namespace?: string): Promise<{ hasPermissions: boolean; missingPermissions: string[]; role?: string; userPermissions?: string[]; } | null> => {
+    try {
+      if (!user?.userId) return null;
+      const ns = namespace || getNamespace();
+      const res = await fetch(`https://brmh.in/namespace-roles/${encodeURIComponent(user.userId)}/${encodeURIComponent(ns)}/check-permissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requiredPermissions })
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
+        hasPermissions: !!data.hasPermissions,
+        missingPermissions: Array.isArray(data.missingPermissions) ? data.missingPermissions : [],
+        role: data.role,
+        userPermissions: Array.isArray(data.userPermissions) ? data.userPermissions : undefined
+      };
+    } catch {
+      return null;
+    }
+  };
+
   return {
     user,
     isLoading,
@@ -142,6 +222,7 @@ export function useAuth() {
     logout,
     requireAuth,
     hasPermission,
-    isAdmin
+    isAdmin,
+    checkPermissions
   };
 } 

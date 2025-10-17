@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { brmhCrud } from '../brmh-client';
+import { verifyHeaderEdit } from '../_utils/iam';
 
 const TABLE_NAME = 'bank-header';
 
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
 // POST /api/bank-header
 export async function POST(request: Request) {
   try {
-    const { bankName, bankId, header, tag, mapping, conditions, userId, userEmail } = await request.json();
+    const { bankName, bankId, header, tag, mapping, conditions, userId } = await request.json();
     if (!bankName || !Array.isArray(header)) {
       return NextResponse.json({ error: 'bankName and header[] are required' }, { status: 400 });
     }
@@ -38,19 +39,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
     
-    // Check if user is admin
-    const adminEmail = process.env.ADMIN_EMAIL;
-    if (!adminEmail) {
-      return NextResponse.json(
-        { error: 'Admin email not configured' },
-        { status: 500 }
-      );
-    }
-    if (userEmail !== adminEmail) {
-      return NextResponse.json(
-        { error: 'Only admin can manage bank headers' },
-        { status: 403 }
-      );
+    // IAM: Only admins or users with edit:headers permission can manage bank headers
+    const iam = await verifyHeaderEdit(userId);
+    if (!iam.isAdmin) {
+      return NextResponse.json({ error: 'You do not have permission to manage bank headers' }, { status: 403 });
     }
     
     // Check if bank header already exists

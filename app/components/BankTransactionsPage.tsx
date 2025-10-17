@@ -672,8 +672,8 @@ export default function BankTransactionsPage({ bankName }: BankTransactionsPageP
               );
             })()}
 
-            {/* Transaction Table Container - Matching Super Bank responsive design */}
-            <div className="flex-1 min-h-0 max-w-full" style={{ minHeight: '920px', maxHeight: 'calc(100vh - 180px)' }}>
+            {/* Transaction Table Container - enforce width within layout and allow horizontal scroll */}
+            <div className="flex-1 min-h-0 w-full max-w-full" style={{ minHeight: '920px', maxHeight: 'calc(100vh - 180px)' }}>
               {transactionsError ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center p-8">
@@ -717,33 +717,40 @@ export default function BankTransactionsPage({ bankName }: BankTransactionsPageP
                   </div>
                 </div>
               ) : (
-                <div className="overflow-x-auto relative h-[80vh]">
+                <div className="relative h-[80vh] w-full max-w-full overflow-hidden">
                   {applyingBulkTag && (
                     <div className="absolute inset-0 z-50 flex items-center justify-center">
                       <div className="px-4 py-2 bg-white border rounded shadow text-sm">Applying tag to all matching transactions...</div>
                     </div>
                   )}
-                  <TransactionTable
-                    rows={sortedAndFilteredTransactions.map(tx => {
-                      const filtered = Object.fromEntries(Object.entries(tx).filter(([key]) => key !== 'transactionData'));
-                      return {
-                        ...filtered,
-                        tags: tx.tags || []
-                      };
-                    })}
-                    headers={transactionHeaders}
-                    selectedRows={new Set(sortedAndFilteredTransactions.map((tx, idx) => selectedRows.has(tx.id) ? idx : -1).filter(i => i !== -1))}
-                    onRowSelect={idx => {
-                      const tx = sortedAndFilteredTransactions[idx];
-                      if (tx) handleRowSelect(tx.id);
-                    }}
-                    onSelectAll={handleSelectAll}
-                    selectAll={selectAll}
-                    loading={loadingTransactions}
-                    error={transactionsError}
-                    onReorderHeaders={handleReorderHeaders}
-                    onRemoveTag={handleRemoveTag}
-                  />
+                  <div className="overflow-x-auto overflow-y-hidden w-full h-full">
+                    <div className="inline-block min-w-full align-middle">
+                      {/* Ensure the table stays within container and scrolls horizontally when needed */}
+                      <div className="min-w-full max-w-full">
+                        <TransactionTable
+                          rows={sortedAndFilteredTransactions.map(tx => {
+                            const filtered = Object.fromEntries(Object.entries(tx).filter(([key]) => key !== 'transactionData'));
+                            return {
+                              ...filtered,
+                              tags: tx.tags || []
+                            };
+                          })}
+                          headers={transactionHeaders}
+                          selectedRows={new Set(sortedAndFilteredTransactions.map((tx, idx) => selectedRows.has(tx.id) ? idx : -1).filter(i => i !== -1))}
+                          onRowSelect={idx => {
+                            const tx = sortedAndFilteredTransactions[idx];
+                            if (tx) handleRowSelect(tx.id);
+                          }}
+                          onSelectAll={handleSelectAll}
+                          selectAll={selectAll}
+                          loading={loadingTransactions}
+                          error={transactionsError}
+                          onReorderHeaders={handleReorderHeaders}
+                          onRemoveTag={handleRemoveTag}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

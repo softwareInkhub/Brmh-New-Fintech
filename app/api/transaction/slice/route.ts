@@ -11,8 +11,36 @@ export async function POST(request: Request) {
   
   try {
     const { csv, statementId, startRow, endRow, bankId, accountId, fileName, userId, bankName, accountName, accountNumber, duplicateCheckFields, s3FileUrl, skipDuplicateCheck = false } = await request.json();
+    
+    // Debug logging to identify missing fields
+    console.log('Transaction slice request data:', {
+      csv: csv ? `CSV data (${csv.length} chars)` : 'MISSING',
+      statementId: statementId || 'MISSING',
+      startRow: startRow ?? 'MISSING',
+      endRow: endRow ?? 'MISSING',
+      bankId: bankId || 'MISSING',
+      accountId: accountId || 'MISSING',
+      bankName: bankName || 'MISSING',
+      fileName: fileName || 'MISSING',
+      userId: userId || 'MISSING'
+    });
+    
     if (!csv || !statementId || startRow == null || endRow == null || !bankId || !accountId || !bankName) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+      const missingFields = [];
+      if (!csv) missingFields.push('csv');
+      if (!statementId) missingFields.push('statementId');
+      if (startRow == null) missingFields.push('startRow');
+      if (endRow == null) missingFields.push('endRow');
+      if (!bankId) missingFields.push('bankId');
+      if (!accountId) missingFields.push('accountId');
+      if (!bankName) missingFields.push('bankName');
+      
+      console.error('Missing required fields:', missingFields);
+      return NextResponse.json({ 
+        error: 'Missing required fields', 
+        missingFields,
+        received: { csv: !!csv, statementId, startRow, endRow, bankId, accountId, bankName }
+      }, { status: 400 });
     }
     
     // Get bank-specific table name

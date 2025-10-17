@@ -3,6 +3,14 @@
 
 const BRMH_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://brmh.in';
 
+// Namespace constants for fintech application
+const NAMESPACE_ID = 'f04c3ae0-e1ca-4a9b-b017-e121fedbf29b';
+const NAMESPACE_NAME = 'fintech';
+
+// Create the expected namespace identifier that matches the S3 path structure
+const NAMESPACE_IDENTIFIER = `${NAMESPACE_NAME}_${NAMESPACE_ID}`;
+
+
 // BRMH Drive client now uses proper Drive API endpoints for S3 storage
 
 // BRMH Drive Client
@@ -75,7 +83,7 @@ class BRMHDriveClient {
     return response.json();
   }
 
-  // Upload file
+  // Upload file with namespace support
   async uploadFile(userId: string, fileData: {
     name: string;
     mimeType: string;
@@ -88,10 +96,12 @@ class BRMHDriveClient {
     accountName?: string;
     accountNumber?: string;
     fileType?: string;
-  }, parentId: string = 'ROOT') {
+  }, parentId: string = 'ROOT', namespace?: { id: string, name: string }) {
     // Use the actual BRMH Drive API for S3 storage
     const endpoint = '/drive/upload';
-    const requestBody = {
+    
+    // Prepare request body with namespace support
+    const requestBody: Record<string, unknown> = {
       userId,
       fileData: {
         name: fileData.name,
@@ -103,11 +113,20 @@ class BRMHDriveClient {
       parentId
     };
     
+    // Add namespace fields for ROOT uploads
+    if (parentId === 'ROOT' && namespace) {
+      // Use the full namespace identifier to ensure correct S3 path
+      requestBody.namespaceId = `${namespace.name}_${namespace.id}`;
+      requestBody.namespaceName = namespace.name;
+    }
+    
     console.log('BRMH Drive upload request:', {
       endpoint,
       userId,
       fileName: fileData.name,
       size: fileData.size,
+      parentId,
+      namespace: parentId === 'ROOT' ? namespace : undefined,
       fullUrl: `${this.baseUrl}${endpoint}`
     });
     
@@ -123,20 +142,46 @@ class BRMHDriveClient {
     return result;
   }
 
-  // Create folder
+  // Create folder with namespace support
   async createFolder(userId: string, folderData: {
     name: string;
     description?: string;
-  }, parentId: string = 'ROOT') {
+  }, parentId: string = 'ROOT', namespace?: { id: string, name: string }) {
     const endpoint = '/drive/folder';
-    return this.makeRequest(endpoint, {
-      method: 'POST',
-      body: JSON.stringify({
-        userId,
-        folderData,
-        parentId
-      }),
+    
+    // Prepare request body with namespace support
+    const requestBody: Record<string, unknown> = {
+      userId,
+      folderData: {
+        ...folderData,
+        // Add namespace for ROOT folders
+        ...(parentId === 'ROOT' && namespace ? {
+          namespaceId: `${namespace.name}_${namespace.id}`,
+          namespaceName: namespace.name
+        } : {})
+      },
+      parentId
+    };
+    
+    console.log('BRMH Drive createFolder request:', {
+      endpoint,
+      userId,
+      folderName: folderData.name,
+      parentId,
+      namespace: parentId === 'ROOT' ? namespace : undefined,
+      fullUrl: `${this.baseUrl}${endpoint}`
     });
+    
+    const result = await this.makeRequest(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+    
+    console.log('BRMH Drive createFolder response:', result);
+    return result;
   }
 
   // Get file by ID
@@ -166,20 +211,57 @@ class BRMHDriveClient {
     });
   }
 
-  // List user files
-  async listFiles(userId: string, parentId: string = 'ROOT', limit: number = 50) {
-    // Use the actual BRMH Drive API
-    const endpoint = `/drive/files/${userId}?parentId=${parentId}&limit=${limit}`;
-    return this.makeRequest(endpoint, {
+  // List user files with namespace scoping
+  async listFiles(userId: string, parentId: string = 'ROOT', limit: number = 50, namespaceId?: string) {
+    // Use the actual BRMH Drive API with namespace scoping
+    let endpoint = `/drive/files/${userId}?parentId=${parentId}&limit=${limit}`;
+    
+    // Add namespace scoping for ROOT requests
+    if (parentId === 'ROOT' && namespaceId) {
+      // Use the full namespace identifier for proper scoping
+      // Convert underscores to dashes to match S3 path format
+      const fullNamespaceId = namespaceId.includes('_') ? namespaceId.replace(/_/g, '-') : `fintech-${namespaceId}`;
+      endpoint += `&namespaceId=${fullNamespaceId}`;
+    }
+    
+    console.log('BRMH Drive listFiles request:', {
+      endpoint,
+      userId,
+      parentId,
+      limit,
+      namespaceId,
+      fullUrl: `${this.baseUrl}${endpoint}`
+    });
+    
+    const result = await this.makeRequest(endpoint, {
       method: 'GET',
     });
+    
+    console.log('BRMH Drive listFiles response:', result);
+    return result;
   }
 
-  // List user folders
-  async listFolders(userId: string, parentId: string = 'ROOT', limit: number = 50) {
-    // Use the actual BRMH Drive API
-    const endpoint = `/drive/folders/${userId}?parentId=${parentId}&limit=${limit}`;
-    console.log('BRMH Drive listFolders request:', { userId, parentId, limit, endpoint, fullUrl: `${this.baseUrl}${endpoint}` });
+  // List user folders with namespace scoping
+  async listFolders(userId: string, parentId: string = 'ROOT', limit: number = 50, namespaceId?: string) {
+    // Use the actual BRMH Drive API with namespace scoping
+    let endpoint = `/drive/folders/${userId}?parentId=${parentId}&limit=${limit}`;
+    
+    // Add namespace scoping for ROOT requests
+    if (parentId === 'ROOT' && namespaceId) {
+      // Use the full namespace identifier for proper scoping
+      // Convert underscores to dashes to match S3 path format
+      const fullNamespaceId = namespaceId.includes('_') ? namespaceId.replace(/_/g, '-') : `fintech-${namespaceId}`;
+      endpoint += `&namespaceId=${fullNamespaceId}`;
+    }
+    
+    console.log('BRMH Drive listFolders request:', { 
+      userId, 
+      parentId, 
+      limit, 
+      namespaceId,
+      endpoint, 
+      fullUrl: `${this.baseUrl}${endpoint}` 
+    });
     
     try {
       const result = await this.makeRequest(endpoint, {
@@ -409,6 +491,9 @@ class BRMHDriveClient {
 
 // Create singleton instance
 export const brmhDrive = new BRMHDriveClient();
+
+// Export namespace constants
+export { NAMESPACE_ID, NAMESPACE_NAME, NAMESPACE_IDENTIFIER };
 
 // Export the class for testing
 export { BRMHDriveClient };

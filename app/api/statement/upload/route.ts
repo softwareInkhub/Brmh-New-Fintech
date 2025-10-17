@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { brmhCrud, TABLES } from '../../brmh-client';
-import { brmhDrive } from '../../brmh-drive-client';
+import { brmhDrive, NAMESPACE_ID, NAMESPACE_NAME } from '../../brmh-drive-client';
 import { v4 as uuidv4 } from 'uuid';
 
 export const runtime = 'nodejs'; // Required for file uploads in Next.js API routes
@@ -78,13 +78,15 @@ export async function POST(request: Request) {
         size: arrayBuffer.byteLength
       });
       
+      // Upload to namespace ROOT
+      const namespace = { id: NAMESPACE_ID, name: NAMESPACE_NAME };
       uploadResult = await brmhDrive.uploadFile(userId as string, {
         name: baseFileName,
         mimeType: 'text/csv',
         size: arrayBuffer.byteLength,
         content: base64Content,
         tags: ['bank-statement', bankName as string, accountId as string]
-      }, 'ROOT');
+      }, 'ROOT', namespace);
       
       console.log('BRMH Drive S3 upload successful:', uploadResult);
       driveFileId = uploadResult.fileId;

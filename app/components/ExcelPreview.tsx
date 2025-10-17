@@ -292,7 +292,7 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
       // Auto-fit columns on first load
       setTimeout(() => {
         // Use fixed pixel sizing so many columns stay readable with horizontal scroll
-        const baseWidth = currentHeaders.length > 15 ? 100 : 140;
+        const baseWidth = currentHeaders.length > 15 ? 90 : 120;
         
         const newWidths: { [key: string]: number } = {};
         currentHeaders.forEach((_, index) => {
@@ -311,7 +311,7 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
       return columnWidths[key];
     }
     // Default pixel widths
-    return currentHeaders.length > 15 ? 100 : 140;
+    return currentHeaders.length > 15 ? 90 : 120;
   }, [columnWidths, activeSheet, currentHeaders.length]);
 
   const getTotalTableWidth = useCallback((): number => {
@@ -404,6 +404,24 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
   // Slicing functions
   const isCsvFile = file.name.toLowerCase().endsWith('.csv');
   const shouldShowSlicing = enableSlicing && isCsvFile;
+
+  const handleToggleSlicing = () => {
+    setShowSlicing(prev => {
+      const next = !prev;
+      if (next) {
+        // Auto-select the column header row as header for slicing
+        setHeaderRow(0);
+        setSelectionStep('transactions');
+      } else {
+        // Reset selection when hiding
+        setHeaderRow(null);
+        setStartRow(null);
+        setEndRow(null);
+        setSelectionStep('header');
+      }
+      return next;
+    });
+  };
 
   const handleSlice = () => {
     if (headerRow !== null && startRow !== null && endRow !== null) {
@@ -586,13 +604,30 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
         
         <div className="flex-1 overflow-auto p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0">
+            <div className="overflow-auto" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', width: '100%', paddingBottom: 4 }}>
+              <table
+                className="border-collapse border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 w-full text-sm"
+                style={{ tableLayout: 'fixed', minWidth: `${getTotalTableWidth() + 100}px` }}
+              >
+                <thead className="sticky top-0 z-10">
                   <tr>
+                    <th
+                      className="border border-gray-300 dark:border-gray-600 bg-gray-200 dark:bg-gray-600 px-2 py-2 text-center text-xs font-semibold text-gray-700 dark:text-gray-300 w-12"
+                    >
+                      #
+                    </th>
                     {previewData[0]?.map((header, idx) => (
-                      <th key={idx} className="border border-gray-200 dark:border-gray-600 px-3 py-2 font-bold bg-blue-50 dark:bg-gray-800 text-blue-900 dark:text-gray-200 whitespace-nowrap text-left">
-                        {header}
+                      <th
+                        key={idx}
+                        className="border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 px-2 sm:px-3 py-1 sm:py-2 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 relative group"
+                        style={{ width: `${getColumnWidth(idx)}px`, minWidth: '60px', maxWidth: '400px' }}
+                      >
+                        <div className="truncate" title={String(header)}>{header}</div>
+                      <div
+                        className="absolute top-0 right-0 w-3 h-full cursor-col-resize hover:bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => handleMouseDown(e as unknown as React.MouseEvent, idx)}
+                        title="Drag to resize column"
+                      />
                       </th>
                     ))}
                   </tr>
@@ -600,15 +635,28 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
                 <tbody>
                   {previewData.slice(1).map((row, i) => (
                     <tr key={i} className="hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                      <td className="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 w-12">
+                        {i + 1}
+                      </td>
                       {row.map((cell, j) => (
-                        <td key={j} className="border border-gray-200 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-gray-100">
-                          {cell}
+                        <td
+                          key={j}
+                          className={`border border-gray-300 dark:border-gray-600 px-2 sm:px-3 py-1 sm:py-2 text-xs sm:text-sm text-gray-900 dark:text-gray-100`}
+                          style={{ width: `${getColumnWidth(j)}px`, minWidth: '60px', maxWidth: '400px' }}
+                        >
+                          <div className="truncate" title={String(cell)}>{cell as string}</div>
                         </td>
                       ))}
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-2 py-1 border-t border-gray-200 dark:border-gray-700">
+              <span>Sheet: <span className="font-semibold">Slice</span></span>
+              <span>Columns: {previewData[0]?.length || 0}</span>
+              <span>← Scroll horizontally to see all columns →</span>
+              <span>Table width: {getTotalTableWidth()}px</span>
             </div>
           </div>
         </div>
@@ -706,13 +754,22 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
       
       <div className="flex-1 overflow-auto p-4">
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-auto" style={{ maxHeight: '65vh' }}>
+            <table className="w-full text-sm" style={{ tableLayout: 'fixed', minWidth: '1200px' }}>
               <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0">
                 <tr>
                   {data[0]?.map((header, idx) => (
-                    <th key={idx} className="border border-gray-200 dark:border-gray-600 px-3 py-2 font-bold bg-blue-50 dark:bg-gray-800 text-blue-900 dark:text-gray-200 whitespace-nowrap text-left">
-                      {header}
+                    <th
+                      key={idx}
+                      className="border border-gray-200 dark:border-gray-600 px-3 py-2 font-bold bg-blue-50 dark:bg-gray-800 text-blue-900 dark:text-gray-200 text-left relative group"
+                      style={{ width: `${getColumnWidth(idx)}px`, minWidth: '80px', maxWidth: '400px' }}
+                    >
+                      <div className="truncate" title={String(header)}>{header}</div>
+                      <div
+                        className="absolute top-0 right-0 w-3 h-full cursor-col-resize hover:bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => handleMouseDown(e as unknown as React.MouseEvent, idx)}
+                        title="Drag to resize column"
+                      />
                     </th>
                   ))}
                 </tr>
@@ -721,9 +778,7 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
                 {data.slice(1).map((row, i) => (
                   <tr key={i} className="hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
                     {row.map((cell, j) => (
-                      <td key={j} className="border border-gray-200 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-gray-100">
-                        {cell}
-                      </td>
+                      <td key={j} className="border border-gray-200 dark:border-gray-600 px-3 py-2 text-gray-900 dark:text-gray-100 truncate max-w-[160px] break-all">{cell as string}</td>
                     ))}
                   </tr>
                 ))}
@@ -904,7 +959,7 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
         <div className="flex flex-wrap items-center gap-2">
           {shouldShowSlicing && (
             <button
-              onClick={() => setShowSlicing(!showSlicing)}
+              onClick={handleToggleSlicing}
               className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors ${
                 showSlicing 
                   ? 'bg-orange-600 text-white hover:bg-orange-700' 
@@ -1100,12 +1155,23 @@ export default function ExcelPreview({ file, onClose, excelData: preloadedData, 
                       {/* Row number */}
                       <td
                         className="border border-gray-300 dark:border-gray-600 px-2 py-2 text-center text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 w-12 relative"
-                        style={{ 
+                        style={{
                           backgroundColor: '#f9fafb',
                           borderColor: '#d1d5db',
                           fontSize: '10px',
-                          fontWeight: '500'
+                          fontWeight: '500',
+                          ...(shouldShowSlicing && showSlicing && selectionStep === 'header' ? { cursor: 'pointer' } : {})
                         }}
+                        onClick={() => {
+                          // Allow clicking the row-number cell to select header quickly
+                          if (shouldShowSlicing && showSlicing && selectionStep === 'header') {
+                            setHeaderRow(actualRowIndex);
+                            setSelectionStep('transactions');
+                          }
+                        }}
+                        title={shouldShowSlicing && showSlicing && selectionStep === 'header' ? 'Click to set header row' : undefined}
+                        role="button"
+                        aria-label={shouldShowSlicing && showSlicing && selectionStep === 'header' ? 'Set header row' : undefined}
                       >
                         {actualRowIndex + 1}
                         

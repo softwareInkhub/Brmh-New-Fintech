@@ -18,6 +18,8 @@ interface MatchResult {
   differences: string[];
   inputRowIndex: number;
   outputRowIndex: number | null;
+  dateMatch: boolean;
+  referenceMatch: boolean;
 }
 
 interface ComparisonSummary {
@@ -28,6 +30,8 @@ interface ComparisonSummary {
   inputOnlyRows: number;
   outputOnlyRows: number;
   noMatches: number;
+  dateAndRefMatches: number;
+  dateOnlyMatches: number;
 }
 
 export default function FileMatchingPage() {
@@ -154,11 +158,18 @@ export default function FileMatchingPage() {
         const inputRow = inputFile.rows[match.file1RowIndex];
         const outputRow = outputFile.rows[match.file2RowIndex];
         const similarity = match.similarity;
+        const dateMatch = match.dateMatch;
+        const referenceMatch = match.referenceMatch;
         
-        // Determine match type based on similarity
+        // Determine match type based on date and reference matching
         let matchType: 'exact' | 'partial' | 'no-match' = 'no-match';
-        if (similarity >= 0.95) matchType = 'exact';
-        else if (similarity >= 0.7) matchType = 'partial';
+        if (dateMatch && referenceMatch) {
+          matchType = 'exact'; // Green: Both date and reference match
+        } else if (dateMatch) {
+          matchType = 'partial'; // Yellow: Only date matches
+        } else if (similarity >= 0.7) {
+          matchType = 'partial'; // Yellow: Similarity match
+        }
         
         // Calculate differences based on mapped columns
         const differences: string[] = [];
@@ -193,7 +204,9 @@ export default function FileMatchingPage() {
           matchType,
           differences,
           inputRowIndex: match.file1RowIndex,
-          outputRowIndex: match.file2RowIndex
+          outputRowIndex: match.file2RowIndex,
+          dateMatch,
+          referenceMatch
         });
       });
       
@@ -206,7 +219,9 @@ export default function FileMatchingPage() {
           matchType: 'no-match',
           differences: ['No matching row found in output file'],
           inputRowIndex: index,
-          outputRowIndex: null
+          outputRowIndex: null,
+          dateMatch: false,
+          referenceMatch: false
         });
       });
       
@@ -220,7 +235,9 @@ export default function FileMatchingPage() {
         partialMatches: results.filter(r => r.matchType === 'partial').length,
         inputOnlyRows: autoMatchResults.unmatchedFile1.length,
         outputOnlyRows: autoMatchResults.unmatchedFile2.length,
-        noMatches: results.filter(r => r.matchType === 'no-match').length
+        noMatches: results.filter(r => r.matchType === 'no-match').length,
+        dateAndRefMatches: results.filter(r => r.dateMatch && r.referenceMatch).length,
+        dateOnlyMatches: results.filter(r => r.dateMatch && !r.referenceMatch).length
       };
       
       setMatchResults(results);
@@ -611,15 +628,33 @@ export default function FileMatchingPage() {
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
                 <div className="text-center p-2 bg-gradient-to-br from-green-50 to-green-100 rounded-md border border-green-200">
                   <div className="w-6 h-6 bg-gradient-to-r from-green-500 to-green-600 rounded flex items-center justify-center mx-auto mb-1">
                     <FiCheckCircle className="w-3.5 h-3.5 text-white" />
                   </div>
                   <div className="text-base font-bold text-green-600 mb-0.5">
+                    {comparisonSummary?.dateAndRefMatches || 0}
+                  </div>
+                  <div className="text-[11px] font-semibold text-green-700">Date+Ref Match</div>
+                </div>
+                <div className="text-center p-2 bg-gradient-to-br from-blue-50 to-blue-100 rounded-md border border-blue-200">
+                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-blue-600 rounded flex items-center justify-center mx-auto mb-1">
+                    <FiCheckCircle className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="text-base font-bold text-blue-600 mb-0.5">
+                    {comparisonSummary?.dateOnlyMatches || 0}
+                  </div>
+                  <div className="text-[11px] font-semibold text-blue-700">Date Only</div>
+                </div>
+                <div className="text-center p-2 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-md border border-emerald-200">
+                  <div className="w-6 h-6 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded flex items-center justify-center mx-auto mb-1">
+                    <FiCheckCircle className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <div className="text-base font-bold text-emerald-600 mb-0.5">
                     {comparisonSummary?.exactMatches || 0}
                   </div>
-                  <div className="text-[11px] font-semibold text-green-700">Exact Matches</div>
+                  <div className="text-[11px] font-semibold text-emerald-700">Exact Matches</div>
                 </div>
                 <div className="text-center p-2 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-md border border-yellow-200">
                   <div className="w-6 h-6 bg-gradient-to-r from-yellow-500 to-yellow-600 rounded flex items-center justify-center mx-auto mb-1">
@@ -628,7 +663,7 @@ export default function FileMatchingPage() {
                   <div className="text-base font-bold text-yellow-600 mb-0.5">
                     {comparisonSummary?.partialMatches || 0}
                   </div>
-                  <div className="text-[11px] font-semibold text-yellow-700">Partial Matches</div>
+                  <div className="text-[11px] font-semibold text-yellow-700">Partial</div>
                 </div>
                 <div className="text-center p-2 bg-gradient-to-br from-red-50 to-red-100 rounded-md border border-red-200">
                   <div className="w-6 h-6 bg-gradient-to-r from-red-500 to-red-600 rounded flex items-center justify-center mx-auto mb-1">
@@ -639,14 +674,14 @@ export default function FileMatchingPage() {
                   </div>
                   <div className="text-[11px] font-semibold text-red-700">Input Only</div>
                 </div>
-                <div className="text-center p-2 bg-gradient-to-br from-blue-50 to-blue-100 rounded-md border border-blue-200">
-                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-blue-600 rounded flex items-center justify-center mx-auto mb-1">
+                <div className="text-center p-2 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-md border border-indigo-200">
+                  <div className="w-6 h-6 bg-gradient-to-r from-indigo-500 to-indigo-600 rounded flex items-center justify-center mx-auto mb-1">
                     <FiFileText className="w-3.5 h-3.5 text-white" />
                   </div>
-                  <div className="text-base font-bold text-blue-600 mb-0.5">
+                  <div className="text-base font-bold text-indigo-600 mb-0.5">
                     {comparisonSummary?.outputOnlyRows || 0}
                   </div>
-                  <div className="text-[11px] font-semibold text-blue-700">Output Only</div>
+                  <div className="text-[11px] font-semibold text-indigo-700">Output Only</div>
                 </div>
                 <div className="text-center p-2 bg-gradient-to-br from-purple-50 to-purple-100 rounded-md border border-purple-200">
                   <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-purple-600 rounded flex items-center justify-center mx-auto mb-1">
@@ -698,7 +733,7 @@ export default function FileMatchingPage() {
                     </div>
                     
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
                         <span className="text-sm font-bold text-gray-900">
                           Input Row {result.inputRowIndex + 1}
                         </span>
@@ -712,6 +747,17 @@ export default function FileMatchingPage() {
                         {result.outputRowIndex !== null && (
                           <span className="text-xs text-gray-500">
                             → Output Row {result.outputRowIndex + 1}
+                          </span>
+                        )}
+                        {/* Match indicators */}
+                        {result.dateMatch && (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 font-medium">
+                            📅 Date Match
+                          </span>
+                        )}
+                        {result.referenceMatch && (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700 font-medium">
+                            🔖 Ref Match
                           </span>
                         )}
                       </div>
@@ -841,10 +887,15 @@ export default function FileMatchingPage() {
                 {(() => {
                   const inputRowToType = new Map<number, 'exact' | 'partial' | 'no-match'>();
                   const outputRowToType = new Map<number, 'exact' | 'partial' | 'no-match'>();
+                  const inputRowToMatches = new Map<number, { dateMatch: boolean; referenceMatch: boolean }>();
+                  const outputRowToMatches = new Map<number, { dateMatch: boolean; referenceMatch: boolean }>();
+                  
                   matchResults.forEach(r => {
                     inputRowToType.set(r.inputRowIndex, r.matchType);
+                    inputRowToMatches.set(r.inputRowIndex, { dateMatch: r.dateMatch, referenceMatch: r.referenceMatch });
                     if (typeof r.outputRowIndex === 'number') {
                       outputRowToType.set(r.outputRowIndex, r.matchType);
+                      outputRowToMatches.set(r.outputRowIndex, { dateMatch: r.dateMatch, referenceMatch: r.referenceMatch });
                     }
                   });
                   if (outputFile) {
@@ -852,9 +903,14 @@ export default function FileMatchingPage() {
                       if (!outputRowToType.has(idx)) outputRowToType.set(idx, 'no-match');
                     });
                   }
-                  const colorClass = (t: 'exact' | 'partial' | 'no-match'): string => (
-                    t === 'exact' ? 'bg-green-50' : t === 'partial' ? 'bg-yellow-50' : 'bg-red-50'
-                  );
+                  const colorClass = (idx: number, isInput: boolean): string => {
+                    const matches = isInput ? inputRowToMatches.get(idx) : outputRowToMatches.get(idx);
+                    if (matches?.dateMatch && matches?.referenceMatch) {
+                      return 'bg-green-100 hover:bg-green-200'; // Green for both date and reference match
+                    }
+                    const t = isInput ? inputRowToType.get(idx) : outputRowToType.get(idx);
+                    return t === 'exact' ? 'bg-green-50' : t === 'partial' ? 'bg-yellow-50' : 'bg-red-50';
+                  };
                   const renderInputTable = () => (
                     <div className="border rounded-lg overflow-hidden">
                       <div className="px-3 py-2 bg-blue-50 border-b font-semibold text-sm text-blue-800">Input CSV</div>
@@ -869,9 +925,8 @@ export default function FileMatchingPage() {
                           </thead>
                           <tbody>
                             {inputFile?.rows.map((row, idx) => {
-                              const t = inputRowToType.get(idx) || 'no-match';
                               return (
-                                <tr key={idx} className={`${colorClass(t)} hover:opacity-90`}>
+                                <tr key={idx} className={`${colorClass(idx, true)} transition-colors`}>
                                   {row.map((cell, ci) => (
                                     <td key={ci} className="px-2 py-1 border-b align-top">{cell}</td>
                                   ))}
@@ -898,9 +953,8 @@ export default function FileMatchingPage() {
                           </thead>
                           <tbody>
                             {outputFile?.rows.map((row, idx) => {
-                              const t = outputRowToType.get(idx) || 'no-match';
                               return (
-                                <tr key={idx} className={`${colorClass(t)} hover:opacity-90`}>
+                                <tr key={idx} className={`${colorClass(idx, false)} transition-colors`}>
                                   {row.map((cell, ci) => (
                                     <td key={ci} className="px-2 py-1 border-b align-top">{cell}</td>
                                   ))}

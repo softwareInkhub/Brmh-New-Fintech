@@ -28,6 +28,15 @@ export function usePermissions() {
     canReadAll: () => hasPermission('read:all'),
     canReadOwn: () => hasPermission('read:own') || hasPermission('read:all'),
 
+    // Bank-specific permissions
+    canCreateBanks: () => hasPermission('crud:all') || hasPermission('create:banks'),
+    canEditBanks: () => hasPermission('crud:all') || hasPermission('edit:banks'),
+    canDeleteBanks: () => hasPermission('crud:all') || hasPermission('delete:banks'),
+    canReadBanks: () => hasPermission('crud:all') || hasPermission('read:banks') || hasPermission('create:banks') || hasPermission('edit:banks'),
+    
+    // Header-specific permissions
+    canEditHeaders: () => hasPermission('crud:all') || hasPermission('edit:headers'),
+
     // Custom permission check
     hasPermission: (permission: string) => hasPermission(permission),
 

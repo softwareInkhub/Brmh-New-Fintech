@@ -8,6 +8,7 @@ import HeaderEditor from '../../components/HeaderEditor';
 import ConfirmDeleteModal from '../../components/Modals/ConfirmDeleteModal';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../hooks/useAuth';
+import { usePermissions } from '../../hooks/usePermissions';
 
 interface Account {
   id: string;
@@ -33,6 +34,7 @@ type Condition = {
 export default function AccountsClient({ bankId, onAccountClick, allTags = [] }: AccountsClientProps) {
   const { theme } = useTheme();
   const { user } = useAuth();
+  const { canEditHeaders } = usePermissions();
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -742,7 +744,7 @@ export default function AccountsClient({ bankId, onAccountClick, allTags = [] }:
               Bank Statement Header
             </h2>
             <div className="flex gap-2">
-              {!headerEditing && (
+              {!headerEditing && canEditHeaders() && (
                 <button
                   type="button"
                   className="p-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200 hover:scale-105"
@@ -752,16 +754,18 @@ export default function AccountsClient({ bankId, onAccountClick, allTags = [] }:
                   <RiEdit2Line size={16} />
                 </button>
               )}
-              <button
-                type="button"
-                className="p-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-green-400 transition-all duration-200 hover:scale-105"
-                onClick={() => setShowMapping(true)}
-                aria-label="Map Header"
-              >
-                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 9l5-5 5 5M12 4v12" />
-                </svg>
-              </button>
+              {canEditHeaders() && (
+                <button
+                  type="button"
+                  className="p-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg shadow focus:outline-none focus:ring-2 focus:ring-green-400 transition-all duration-200 hover:scale-105"
+                  onClick={() => setShowMapping(true)}
+                  aria-label="Map Header"
+                >
+                  <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 9l5-5 5 5M12 4v12" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
           

@@ -11,6 +11,7 @@ import { Bank } from '../types/aws';
 import { useRouter, usePathname } from 'next/navigation';
 import BanksSidebar from '../components/BanksSidebar';
 import { useAuth } from '../hooks/useAuth';
+import { usePermissions } from '../hooks/usePermissions';
 import BankFilesComponent from '../components/BankFilesComponent';
 import BankTransactionsPage from '../components/BankTransactionsPage';
 
@@ -49,7 +50,7 @@ export default function BanksTabsClient() {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+  const { canCreateBanks, canEditBanks, canDeleteBanks } = usePermissions();
 
   useEffect(() => {
     const fetchBanks = async () => {
@@ -234,9 +235,9 @@ export default function BanksTabsClient() {
         return;
       }
       
-      // Check if user is admin
-      if (user?.email !== adminEmail) {
-        setError('Only admin can create banks');
+      // Check if user can create banks
+      if (!canCreateBanks()) {
+        setError('You do not have permission to create banks');
         return;
       }
       
@@ -261,9 +262,9 @@ export default function BanksTabsClient() {
 
   const handleUpdateBank = async (id: string, bankName: string, tags: string[]) => {
     try {
-      // Check if user is admin
-      if (user?.email !== adminEmail) {
-        setError('Only admin can edit banks');
+      // Check if user can edit banks
+      if (!canEditBanks()) {
+        setError('You do not have permission to edit banks');
         return;
       }
       
@@ -350,9 +351,9 @@ export default function BanksTabsClient() {
     const bank = banks.find(b => b.id === bankId);
     if (!bank) return;
     
-    // Check if user is admin
-    if (user?.email !== adminEmail) {
-      setError('Only admin can delete banks');
+    // Check if user can delete banks
+    if (!canDeleteBanks()) {
+      setError('You do not have permission to delete banks');
       return;
     }
     
@@ -573,13 +574,15 @@ export default function BanksTabsClient() {
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">No banks added yet</h3>
                     <p className="text-gray-600 dark:text-gray-400 mb-4 max-w-md mx-auto text-sm">Get started by adding your first bank to begin managing your financial accounts and transactions.</p>
-                    <button
-                      onClick={() => setIsModalOpen(true)}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:shadow-lg hover:scale-105 transition-all duration-200 text-sm"
-                    >
-                      <RiAddLine size={18} />
-                      Add Your First Bank
-                    </button>
+                    {canCreateBanks() && (
+                      <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold hover:shadow-lg hover:scale-105 transition-all duration-200 text-sm"
+                      >
+                        <RiAddLine size={18} />
+                        Add Your First Bank
+                      </button>
+                    )}
                   </div>
                 ) : isLoadingStats ? (
                   <div className="col-span-full text-center py-12">
@@ -598,22 +601,26 @@ export default function BanksTabsClient() {
                       <div className="absolute top-0 right-0 w-28 h-28 bg-gradient-to-br from-blue-100 via-purple-100 to-transparent rounded-full opacity-30 transform translate-x-14 -translate-y-14 group-hover:scale-110 transition-transform duration-300"></div>
                       
                       {/* Compact Edit/Delete Buttons */}
-                      {user?.email === adminEmail && (
+                      {(canEditBanks() || canDeleteBanks()) && (
                         <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10">
-                          <button
-                            className="p-1.5 bg-white/90 backdrop-blur-sm hover:bg-blue-50 rounded-lg shadow border border-gray-200 hover:scale-110 transition-all duration-200"
-                            onClick={e => { e.stopPropagation(); handleEditBank(bank); }}
-                            title="Edit Bank"
-                          >
-                            <RiEdit2Line className="text-blue-600" size={14} />
-                          </button>
-                          <button
-                            className="p-1.5 bg-white/90 backdrop-blur-sm hover:bg-red-50 rounded-lg shadow border border-gray-200 hover:scale-110 transition-all duration-200"
-                            onClick={e => { e.stopPropagation(); handleDeleteBank(bank.id); }}
-                            title="Delete Bank"
-                          >
-                            <RiDeleteBin6Line className="text-red-600" size={14} />
-                          </button>
+                          {canEditBanks() && (
+                            <button
+                              className="p-1.5 bg-white/90 backdrop-blur-sm hover:bg-blue-50 rounded-lg shadow border border-gray-200 hover:scale-110 transition-all duration-200"
+                              onClick={e => { e.stopPropagation(); handleEditBank(bank); }}
+                              title="Edit Bank"
+                            >
+                              <RiEdit2Line className="text-blue-600" size={14} />
+                            </button>
+                          )}
+                          {canDeleteBanks() && (
+                            <button
+                              className="p-1.5 bg-white/90 backdrop-blur-sm hover:bg-red-50 rounded-lg shadow border border-gray-200 hover:scale-110 transition-all duration-200"
+                              onClick={e => { e.stopPropagation(); handleDeleteBank(bank.id); }}
+                              title="Delete Bank"
+                            >
+                              <RiDeleteBin6Line className="text-red-600" size={14} />
+                            </button>
+                          )}
                         </div>
                       )}
                       

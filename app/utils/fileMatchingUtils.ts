@@ -8,7 +8,9 @@ const HEADER_PATTERNS = {
   date: [
     'date', 'transaction date', 'txn date', 'value date', 'posting date',
     'trans date', 'trn date', 'dt', 'dated', 'transaction_date', 'txndate',
-    'valuedate', 'value_date', 'tran_date', 'trans_date'
+    'valuedate', 'value_date', 'tran_date', 'trans_date',
+    // Common bank header variants
+    'value dt', 'valuedt', 'posting dt', 'txn dt', 'value dt.'
   ],
   amount: [
     'amount', 'amt', 'value', 'transaction amount', 'txn amount', 'debit',
@@ -345,7 +347,7 @@ export function smartAutoMatch(
   file2: { headers: string[]; rows: string[][] },
   similarityThreshold: number = 0.7
 ): {
-  matches: { file1RowIndex: number; file2RowIndex: number; similarity: number }[];
+  matches: { file1RowIndex: number; file2RowIndex: number; similarity: number; dateMatch: boolean; referenceMatch: boolean }[];
   unmatchedFile1: number[];
   unmatchedFile2: number[];
   columnMappings: { inputIndex: number; outputIndex: number; type: string; confidence: number }[];
@@ -362,54 +364,106 @@ export function smartAutoMatch(
     };
   }
   
-  const matches: { file1RowIndex: number; file2RowIndex: number; similarity: number }[] = [];
+  const matches: { file1RowIndex: number; file2RowIndex: number; similarity: number; dateMatch: boolean; referenceMatch: boolean }[] = [];
   const usedFile2Indices = new Set<number>();
-  const unmatchedFile1: number[] = [];
+  const usedFile1Indices = new Set<number>();
   
-  // For each row in file1, find best match in file2
-  for (let i = 0; i < file1.rows.length; i++) {
-    const row1 = file1.rows[i];
-    let bestMatch: { index: number; similarity: number } | null = null;
-    
+  const dateMapping = columnMappings.find(m => m.type === 'date');
+  const referenceMapping = columnMappings.find(m => m.type === 'reference');
+
+  // Build quick lookup maps for file2 by date and by date+reference
+  const file2ByDate = new Map<string, number[]>();
+  const file2ByDateRef = new Map<string, number>();
+  if (dateMapping) {
     for (let j = 0; j < file2.rows.length; j++) {
-      if (usedFile2Indices.has(j)) continue;
-      
-      const row2 = file2.rows[j];
-      const similarity = calculateRowSimilarity(row1, row2, columnMappings);
-      
-      if (similarity >= similarityThreshold) {
-        if (!bestMatch || similarity > bestMatch.similarity) {
-          bestMatch = { index: j, similarity };
-        }
+      const r2 = file2.rows[j];
+      const d2 = normalizeDate(r2[dateMapping.outputIndex] || '');
+      if (!d2) continue;
+      const list = file2ByDate.get(d2) || [];
+      list.push(j);
+      file2ByDate.set(d2, list);
+      if (referenceMapping) {
+        const ref2 = normalizeDescription(r2[referenceMapping.outputIndex] || '');
+        if (ref2) file2ByDateRef.set(`${d2}__${ref2}`, j);
       }
     }
-    
-    if (bestMatch) {
-      matches.push({
-        file1RowIndex: i,
-        file2RowIndex: bestMatch.index,
-        similarity: bestMatch.similarity
-      });
-      usedFile2Indices.add(bestMatch.index);
-    } else {
-      unmatchedFile1.push(i);
+  }
+
+  // PASS 1: Exact Date + Reference matches (always accept)
+  if (dateMapping && referenceMapping) {
+    for (let i = 0; i < file1.rows.length; i++) {
+      const r1 = file1.rows[i];
+      const d1 = normalizeDate(r1[dateMapping.inputIndex] || '');
+      const ref1 = normalizeDescription(r1[referenceMapping.inputIndex] || '');
+      if (!d1 || !ref1) continue;
+      const key = `${d1}__${ref1}`;
+      const j = file2ByDateRef.get(key);
+      if (j !== undefined && !usedFile2Indices.has(j)) {
+        const sim = calculateRowSimilarity(r1, file2.rows[j], columnMappings);
+        matches.push({ file1RowIndex: i, file2RowIndex: j, similarity: sim, dateMatch: true, referenceMatch: true });
+        usedFile2Indices.add(j);
+        usedFile1Indices.add(i);
+      }
     }
   }
-  
-  // Find unmatched rows in file2
+
+  // PASS 2: Date-only matches (accept even if similarity < threshold)
+  if (dateMapping) {
+    for (let i = 0; i < file1.rows.length; i++) {
+      if (usedFile1Indices.has(i)) continue;
+      const r1 = file1.rows[i];
+      const d1 = normalizeDate(r1[dateMapping.inputIndex] || '');
+      if (!d1) continue;
+      const candidates = (file2ByDate.get(d1) || []).filter(idx => !usedFile2Indices.has(idx));
+      if (candidates.length > 0) {
+        // choose best by similarity, but accept regardless of threshold
+        let bestIdx = candidates[0];
+        let bestSim = calculateRowSimilarity(r1, file2.rows[bestIdx], columnMappings);
+        for (let k = 1; k < candidates.length; k++) {
+          const cIdx = candidates[k];
+          const sim = calculateRowSimilarity(r1, file2.rows[cIdx], columnMappings);
+          if (sim > bestSim) { bestSim = sim; bestIdx = cIdx; }
+        }
+        const refMatch = referenceMapping ? (normalizeDescription(r1[referenceMapping.inputIndex] || '') === normalizeDescription(file2.rows[bestIdx][referenceMapping.outputIndex] || '')) : false;
+        matches.push({ file1RowIndex: i, file2RowIndex: bestIdx, similarity: bestSim, dateMatch: true, referenceMatch: !!refMatch });
+        usedFile2Indices.add(bestIdx);
+        usedFile1Indices.add(i);
+      }
+    }
+  }
+
+  // PASS 3: Fallback similarity-based matching for remaining rows
+  for (let i = 0; i < file1.rows.length; i++) {
+    if (usedFile1Indices.has(i)) continue;
+    const row1 = file1.rows[i];
+    let best: { j: number; sim: number; dateMatch: boolean; referenceMatch: boolean } | null = null;
+    for (let j = 0; j < file2.rows.length; j++) {
+      if (usedFile2Indices.has(j)) continue;
+      const row2 = file2.rows[j];
+      const sim = calculateRowSimilarity(row1, row2, columnMappings);
+      if (sim < similarityThreshold) continue;
+      const dMatch = dateMapping ? (normalizeDate(row1[dateMapping.inputIndex] || '') === normalizeDate(row2[dateMapping.outputIndex] || '')) : false;
+      const rMatch = referenceMapping ? (normalizeDescription(row1[referenceMapping.inputIndex] || '') === normalizeDescription(row2[referenceMapping.outputIndex] || '')) : false;
+      if (!best || sim > best.sim) best = { j, sim, dateMatch: dMatch, referenceMatch: rMatch };
+    }
+    if (best) {
+      matches.push({ file1RowIndex: i, file2RowIndex: best.j, similarity: best.sim, dateMatch: best.dateMatch, referenceMatch: best.referenceMatch });
+      usedFile2Indices.add(best.j);
+      usedFile1Indices.add(i);
+    }
+  }
+
+  // Unmatched collections
+  const unmatchedFile1: number[] = [];
+  for (let i = 0; i < file1.rows.length; i++) {
+    if (!usedFile1Indices.has(i)) unmatchedFile1.push(i);
+  }
   const unmatchedFile2: number[] = [];
-  for (let i = 0; i < file2.rows.length; i++) {
-    if (!usedFile2Indices.has(i)) {
-      unmatchedFile2.push(i);
-    }
+  for (let j = 0; j < file2.rows.length; j++) {
+    if (!usedFile2Indices.has(j)) unmatchedFile2.push(j);
   }
   
-  return {
-    matches,
-    unmatchedFile1,
-    unmatchedFile2,
-    columnMappings
-  };
+  return { matches, unmatchedFile1, unmatchedFile2, columnMappings };
 }
 
 /**

@@ -20,7 +20,7 @@ export const usePreviewTabManager = () => {
     addTab({
       id: tabId,
       title: `Preview: ${file.name}`,
-      type: 'custom', // Use 'custom' type to avoid switching to Files section
+      type: 'entities', // Mark as entities so sidebar highlights Entities
       component: (
         <div className="h-full max-h-[85vh]">
           <ExcelPreview 
@@ -31,7 +31,7 @@ export const usePreviewTabManager = () => {
           />
         </div>
       ),
-      data: { fileId: file.id, fileName: file.name, previewType: 'excel' }
+      data: { fileId: file.id, fileName: file.name, previewType: 'excel', source: 'entities' }
     });
 
     setActiveTab(tabId);
@@ -165,13 +165,13 @@ export const usePreviewTabManager = () => {
     addTab({
       id: tabId,
       title: `Preview: ${file.name}`,
-      type: 'custom', // Use 'custom' type to avoid switching to Files section
+      type: 'entities', // Mark as entities so sidebar highlights Entities
       component: (
         <div className="h-full max-h-[85vh]">
           <CsvPreviewComponent />
         </div>
       ),
-      data: { fileId: file.id, fileName: file.name, previewType: 'csv' }
+      data: { fileId: file.id, fileName: file.name, previewType: 'csv', source: 'entities' }
     });
 
     setActiveTab(tabId);

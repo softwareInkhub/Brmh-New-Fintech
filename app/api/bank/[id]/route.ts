@@ -1,27 +1,19 @@
 import { NextResponse } from 'next/server';
 import { brmhCrud, TABLES, getBankTransactionTable } from '../../brmh-client';
+import { verifyAdmin } from '../../_utils/iam';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { bankName, tags, userEmail } = await request.json();
+  const { bankName, tags, userId } = await request.json();
 
   if (!bankName) {
     return NextResponse.json({ error: 'Bank name is required' }, { status: 400 });
   }
 
-  // Check if user is admin
-  const adminEmail = process.env.ADMIN_EMAIL;
-  if (!adminEmail) {
-    return NextResponse.json(
-      { error: 'Admin email not configured' },
-      { status: 500 }
-    );
-  }
-  if (userEmail !== adminEmail) {
-    return NextResponse.json(
-      { error: 'Only admin can edit banks' },
-      { status: 403 }
-    );
+  // IAM: Only admins can edit banks
+  const iam = await verifyAdmin(userId);
+  if (!iam.isAdmin) {
+    return NextResponse.json({ error: 'Only admin can edit banks' }, { status: 403 });
   }
 
   const bank = {
@@ -48,21 +40,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
 
-    // Check if user is admin
-    const adminEmail = process.env.ADMIN_EMAIL;
-    console.log('Admin email check:', { adminEmail, userEmail });
-    
-    if (!adminEmail) {
-      return NextResponse.json(
-        { error: 'Admin email not configured' },
-        { status: 500 }
-      );
-    }
-    if (userEmail !== adminEmail) {
-      return NextResponse.json(
-        { error: 'Only admin can delete banks' },
-        { status: 403 }
-      );
+    // IAM: Only admins can delete banks
+    const iam = await verifyAdmin(userId);
+    if (!iam.isAdmin) {
+      return NextResponse.json({ error: 'Only admin can delete banks' }, { status: 403 });
     }
 
     // Test BRMH connection

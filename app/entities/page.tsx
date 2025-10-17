@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSidebarPreferences } from '../contexts/SidebarPreferencesContext';
 import { brmhCrud } from '../api/brmh-client';
 import { usePreviewTabManager } from '../hooks/usePreviewTabManager';
+import { useEntitySync } from '../contexts/EntitySyncContext';
 import { 
   RiAddLine, 
   RiFolderLine, 
@@ -126,6 +127,7 @@ export default function EntitiesPage() {
   // const { entities: contextEntities, refreshEntities } = useEntitySync();
   // const { entityFiles: contextEntityFiles, refreshEntityFiles } = useFileSync();
   const { openFilePreview } = usePreviewTabManager();
+  const { updateEntities } = useEntitySync();
   const { sidebarEntities, setSidebarEntities } = useSidebarPreferences();
   const [sidebarFlags, setSidebarFlags] = useState<Record<string, boolean>>({});
 
@@ -144,8 +146,11 @@ export default function EntitiesPage() {
         return;
       }
 
-      // Call BRMH Drive API to fetch folders (entities) from ROOT
-      const response = await fetch(`https://brmh.in/drive/folders/${userId}?parentId=ROOT&limit=100`, {
+      // Call BRMH Drive API to fetch folders (entities) from ROOT with namespace scoping
+      const NAMESPACE_ID = 'f04c3ae0-e1ca-4a9b-b017-e121fedbf29b';
+      const NAMESPACE_NAME = 'fintech';
+      const FULL_NAMESPACE_ID = `${NAMESPACE_NAME}_${NAMESPACE_ID}`;
+      const response = await fetch(`https://brmh.in/drive/folders/${userId}?parentId=ROOT&limit=100&namespaceId=${FULL_NAMESPACE_ID}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -216,10 +221,12 @@ export default function EntitiesPage() {
       console.log('Final entities:', entities);
 
       setEntities(entities);
+      // Sync global entity list so the main sidebar can render dynamic items immediately
+      updateEntities(entities);
 
       // Load remote sidebar flags for this user
       try {
-        const meta = await brmhCrud.get('fintech-entety', {
+        const meta = await brmhCrud.scan('fintech-entety', {
           FilterExpression: 'userId = :userId',
           ExpressionAttributeValues: { ':userId': userId }
         });
@@ -248,7 +255,7 @@ export default function EntitiesPage() {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [setSidebarEntities]);
+  }, [setSidebarEntities, updateEntities]);
 
   const loadAllEntityFiles = useCallback(async () => {
     try {
@@ -362,9 +369,13 @@ export default function EntitiesPage() {
         return;
       }
 
-      // Call BRMH Drive API to fetch files for this entity
+      // Call BRMH Drive API to fetch files for this entity with namespace scoping
       // Try the files endpoint first
-      let response = await fetch(`https://brmh.in/drive/files/${userId}?parentId=${entityId}&limit=100`, {
+      const NAMESPACE_ID = 'f04c3ae0-e1ca-4a9b-b017-e121fedbf29b';
+      const NAMESPACE_NAME = 'fintech';
+      const FULL_NAMESPACE_ID = `${NAMESPACE_NAME}-${NAMESPACE_ID}`; // Use dashes to match S3 path
+      
+      let response = await fetch(`https://brmh.in/drive/files/${userId}?parentId=${entityId}&limit=100${entityId === 'ROOT' ? `&namespaceId=${FULL_NAMESPACE_ID}` : ''}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -726,8 +737,8 @@ export default function EntitiesPage() {
         return;
       }
 
-      // Call BRMH Drive API to create a folder (entity)
-      const response = await fetch('https://brmh.in/drive/folder', {
+      // Call our API route which handles namespace automatically
+      const response = await fetch('/api/folders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

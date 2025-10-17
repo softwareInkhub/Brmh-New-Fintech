@@ -4050,7 +4050,7 @@ export default function SuperBankPage() {
               >
                 ×
               </button>
-              {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && !headerEditing && (
+            {user?.role === 'admin' && !headerEditing && (
                 <button
                   className="px-2 py-1 bg-blue-500 text-white rounded text-xs flex items-center"
                   onClick={() => setHeaderEditing(true)}

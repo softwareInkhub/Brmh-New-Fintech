@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { RiBankLine, RiAccountPinCircleLine, RiArrowRightSLine, RiArrowDownSLine, RiFileList3Line, RiTimeLine, RiSearchLine, RiCircleFill, RiAddLine, RiEdit2Line, RiDeleteBin6Line } from 'react-icons/ri';
-import { useAuth } from '../hooks/useAuth';
+import { usePermissions } from '../hooks/usePermissions';
 import { Bank } from '../types/aws';
 import ChildSidebar from './ChildSidebar';
 
@@ -58,8 +58,7 @@ function BanksSidebar({
   const [expandedBankSections, setExpandedBankSections] = useState<{ [bankId: string]: string[] }>({});
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
-  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+  const { canCreateBanks, canEditBanks, canDeleteBanks } = usePermissions();
   
   // Use prop banks if provided, otherwise use local state
   const banks = propBanks || localBanks;
@@ -200,7 +199,7 @@ function BanksSidebar({
             {!isCollapsed && (
               <div className="flex items-center justify-between px-3 py-2">
                 <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Banks</h3>
-                {user?.email === adminEmail && onAddBankClick && (
+                {canCreateBanks() && onAddBankClick && (
                   <button
                     onClick={onAddBankClick}
                     className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
@@ -245,9 +244,9 @@ function BanksSidebar({
                     </button>
 
                     {/* Action Buttons */}
-                    {!isCollapsed && user?.email === adminEmail && (
+                    {!isCollapsed && (canEditBanks() || canDeleteBanks()) && (
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {onEditBankClick && (
+                        {onEditBankClick && canEditBanks() && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -259,7 +258,7 @@ function BanksSidebar({
                             <RiEdit2Line size={12} className="text-gray-500 dark:text-gray-400" />
                           </button>
                         )}
-                        {onDeleteBankClick && (
+                        {onDeleteBankClick && canDeleteBanks() && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

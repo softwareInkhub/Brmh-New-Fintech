@@ -1014,6 +1014,22 @@ function FilePreview({ file, onSlice }: { file: FileData, onSlice?: (sliceData: 
 
                   };
 
+                  // Debug: Log the payload to see what's being sent
+                  console.log('Transaction slice payload:', {
+                    csv: csv ? `CSV data (${csv.length} chars)` : 'MISSING',
+                    statementId: payload.statementId || 'MISSING',
+                    startRow: payload.startRow ?? 'MISSING',
+                    endRow: payload.endRow ?? 'MISSING',
+                    bankId: payload.bankId || 'MISSING',
+                    accountId: payload.accountId || 'MISSING',
+                    bankName: payload.bankName || 'MISSING',
+                    fileName: payload.fileName || 'MISSING',
+                    userId: payload.userId || 'MISSING'
+                  });
+                  
+                  // Debug: Log the full file object to see what data is available
+                  console.log('Full file object:', file);
+
                   const res = await fetch('/api/transaction/slice', {
 
                     method: 'POST',
@@ -4764,8 +4780,9 @@ const FilesPage: React.FC = () => {
     if (!folderName.trim()) return;
     
     const userId = localStorage.getItem('userId');
+    const tempFolderId = `folder_${Date.now()}`;
     const newFolder: Folder = {
-      id: `folder_${Date.now()}`,
+      id: tempFolderId,
       name: folderName.trim(),
       userId: userId || '',
       createdAt: new Date().toISOString(),
@@ -4777,11 +4794,29 @@ const FilesPage: React.FC = () => {
     setShowCreateFolderModal(false);
     
     try {
-      await fetch('/api/folders', {
+      // Use the correct API format with namespace support
+      const response = await fetch('/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newFolder)
+        body: JSON.stringify({
+          userId: userId,
+          folderData: {
+            name: folderName.trim(),
+            description: ''
+          },
+          parentId: 'ROOT'
+        })
       });
+      
+      if (response.ok) {
+        const createdFolder = await response.json();
+        console.log('Folder created with namespace:', createdFolder);
+        
+        // Update the local folder with the real ID from the server
+        setFolders(prev => prev.map(f => 
+          f.id === tempFolderId ? { ...f, id: createdFolder.folderId || createdFolder.id } : f
+        ));
+      }
     } catch (error) {
       console.error('Error saving folder:', error);
     }

@@ -19,6 +19,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const getNamespace = (): string => {
+    const envNs = (process.env.NEXT_PUBLIC_IAM_NAMESPACE || '').trim();
+    if (envNs) return envNs;
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('iam_namespace');
+      if (stored && stored.trim()) return stored.trim();
+    }
+    return 'Fintech';
+  };
+
   useEffect(() => {
     const checkAuth = async () => {
       // Skip auth check for debug and public pages
@@ -127,45 +137,35 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                   addDebugLog(`💾 Stored user_name: ${userData.user['cognito:username']}`);
                 }
 
-                // Fetch user role from brmh-users table
+                // Fetch role/permissions from IAM for the current namespace
                 try {
-                  addDebugLog(`🔍 Fetching user role from brmh-users table...`);
-                  const roleResponse = await fetch(`${API_BASE_URL}/crud?tableName=brmh-users&FilterExpression=cognitoUsername = :username&:username=${userData.user['cognito:username']}`, {
-                    credentials: 'include',
-                  });
-
-                  if (roleResponse.ok) {
-                    const roleData = await roleResponse.json();
-                    addDebugLog(`📦 Role data: ${JSON.stringify(roleData).substring(0, 300)}`);
-                    
-                    if (roleData.items && roleData.items.length > 0) {
-                      const userRecord = roleData.items[0];
-                      
-                      // Get fintech namespace role
-                      const namespaceRoles = userRecord.namespaceRoles || {};
-                      const fintechRole = namespaceRoles.fintech || { role: 'user', permissions: ['read:own'] };
-                      
-                      localStorage.setItem('userRole', fintechRole.role);
-                      localStorage.setItem('userPermissions', JSON.stringify(fintechRole.permissions || []));
-                      localStorage.setItem('namespaceRoles', JSON.stringify(namespaceRoles));
-                      
-                      addDebugLog(`✅ User role in fintech namespace: ${fintechRole.role}`);
-                      addDebugLog(`✅ Permissions: ${JSON.stringify(fintechRole.permissions)}`);
+                  const namespace = getNamespace();
+                  const sub = userData.user.sub;
+                  if (sub) {
+                    addDebugLog(`🔍 Fetching IAM role for namespace: ${namespace}`);
+                    const roleRes = await fetch(`https://brmh.in/namespace-roles/${encodeURIComponent(sub)}/${encodeURIComponent(namespace)}`, {
+                      credentials: 'include'
+                    });
+                    if (roleRes.ok) {
+                      const iam = await roleRes.json();
+                      const resolvedRole = iam.role || 'user';
+                      const resolvedPerms = Array.isArray(iam.permissions) ? iam.permissions : [];
+                      const isAdmin = resolvedRole === 'admin' || resolvedRole === 'superadmin' || resolvedPerms.includes('crud:all');
+                      const finalRole = isAdmin ? 'admin' : resolvedRole;
+                      localStorage.setItem('userRole', finalRole);
+                      localStorage.setItem('userPermissions', JSON.stringify(resolvedPerms));
+                      localStorage.setItem('iam_namespace', namespace);
+                      addDebugLog(`✅ IAM role: ${finalRole}, perms: ${JSON.stringify(resolvedPerms)}`);
                     } else {
-                      // Default to user role if not found in brmh-users table
                       localStorage.setItem('userRole', 'user');
                       localStorage.setItem('userPermissions', JSON.stringify(['read:own']));
-                      addDebugLog(`⚠️ User not found in brmh-users table, using default role: user`);
+                      addDebugLog(`⚠️ IAM role fetch failed, defaulting to user`);
                     }
-                  } else {
-                    addDebugLog(`⚠️ Failed to fetch role data, using default role: user`);
-                    localStorage.setItem('userRole', 'user');
-                    localStorage.setItem('userPermissions', JSON.stringify(['read:own']));
                   }
-                } catch (roleError) {
-                  addDebugLog(`⚠️ Error fetching role: ${roleError}`);
+                } catch (e) {
                   localStorage.setItem('userRole', 'user');
                   localStorage.setItem('userPermissions', JSON.stringify(['read:own']));
+                  addDebugLog(`⚠️ IAM error: ${e}`);
                 }
               }
               
@@ -236,38 +236,30 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
                   // Fetch user role from brmh-users table
                   try {
                     addDebugLog(`🔍 Fetching user role from brmh-users table...`);
-                    const roleResponse = await fetch(`${API_BASE_URL}/crud?tableName=brmh-users&FilterExpression=cognitoUsername = :username&:username=${payload['cognito:username']}`, {
+                    const namespace = getNamespace();
+                    addDebugLog(`🔍 Fetching IAM role for namespace: ${namespace}`);
+                    const roleRes = await fetch(`https://brmh.in/namespace-roles/${encodeURIComponent(payload.sub)}/${encodeURIComponent(namespace)}`, {
                       headers: {
                         'Authorization': `Bearer ${accessToken}`,
                       },
                     });
-
-                    if (roleResponse.ok) {
-                      const roleData = await roleResponse.json();
-                      addDebugLog(`📦 Role data: ${JSON.stringify(roleData).substring(0, 300)}`);
-                      
-                      if (roleData.items && roleData.items.length > 0) {
-                        const userRecord = roleData.items[0];
-                        
-                        // Get fintech namespace role
-                        const namespaceRoles = userRecord.namespaceRoles || {};
-                        const fintechRole = namespaceRoles.fintech || { role: 'user', permissions: ['read:own'] };
-                        
-                        localStorage.setItem('userRole', fintechRole.role);
-                        localStorage.setItem('userPermissions', JSON.stringify(fintechRole.permissions || []));
-                        localStorage.setItem('namespaceRoles', JSON.stringify(namespaceRoles));
-                        
-                        addDebugLog(`✅ User role in fintech namespace: ${fintechRole.role}`);
-                        addDebugLog(`✅ Permissions: ${JSON.stringify(fintechRole.permissions)}`);
-                      } else {
-                        // Default to user role
-                        localStorage.setItem('userRole', 'user');
-                        localStorage.setItem('userPermissions', JSON.stringify(['read:own']));
-                        addDebugLog(`⚠️ User not found in brmh-users table, using default role: user`);
-                      }
+                    if (roleRes.ok) {
+                      const iam = await roleRes.json();
+                      const resolvedRole = iam.role || 'user';
+                      const resolvedPerms = Array.isArray(iam.permissions) ? iam.permissions : [];
+                      const isAdmin = resolvedRole === 'admin' || resolvedRole === 'superadmin' || resolvedPerms.includes('crud:all');
+                      const finalRole = isAdmin ? 'admin' : resolvedRole;
+                      localStorage.setItem('userRole', finalRole);
+                      localStorage.setItem('userPermissions', JSON.stringify(resolvedPerms));
+                      localStorage.setItem('iam_namespace', namespace);
+                      addDebugLog(`✅ IAM role: ${finalRole}, perms: ${JSON.stringify(resolvedPerms)}`);
+                    } else {
+                      localStorage.setItem('userRole', 'user');
+                      localStorage.setItem('userPermissions', JSON.stringify(['read:own']));
+                      addDebugLog(`⚠️ IAM role fetch failed, defaulting to user`);
                     }
                   } catch (roleError) {
-                    addDebugLog(`⚠️ Error fetching role: ${roleError}`);
+                    addDebugLog(`⚠️ IAM error: ${roleError}`);
                     localStorage.setItem('userRole', 'user');
                     localStorage.setItem('userPermissions', JSON.stringify(['read:own']));
                   }

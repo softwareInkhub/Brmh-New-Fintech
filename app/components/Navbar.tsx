@@ -95,6 +95,12 @@ export default function Navbar({ onMobileMenuToggle, title, brandTitle, brandIco
               {user.email}
             </span>
           )}
+          {/* Admin badge */}
+          {user?.role === 'admin' && (
+            <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 select-none">
+              Admin
+            </span>
+          )}
           
           {/* Profile Button */}
           <button

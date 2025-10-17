@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { brmhCrud, TABLES } from '../brmh-client';
+import { verifyAdmin } from '../_utils/iam';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function GET() {
@@ -38,7 +39,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { bankName, tags, userId, userEmail } = await request.json();
+    const { bankName, tags, userId } = await request.json();
 
     if (!bankName) {
       return NextResponse.json(
@@ -54,19 +55,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if user is admin
-    const adminEmail = process.env.ADMIN_EMAIL;
-    if (!adminEmail) {
-      return NextResponse.json(
-        { error: 'Admin email not configured' },
-        { status: 500 }
-      );
-    }
-    if (userEmail !== adminEmail) {
-      return NextResponse.json(
-        { error: 'Only admin can create banks' },
-        { status: 403 }
-      );
+    // IAM: Only admins can create banks
+    const iam = await verifyAdmin(userId);
+    if (!iam.isAdmin) {
+      return NextResponse.json({ error: 'Only admin can create banks' }, { status: 403 });
     }
 
     const id = uuidv4();

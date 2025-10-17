@@ -47,11 +47,43 @@ export const EntitySyncProvider: React.FC<EntitySyncProviderProps> = ({ children
       const userId = localStorage.getItem('userId');
       if (!userId) return;
 
-      const response = await fetch(`/api/folders?userId=${userId}&parentId=ROOT`);
-      if (response.ok) {
-        const data = await response.json();
-        setEntities(data.folders || []);
+      // Fetch from BRMH Drive directly using the same logic as Entities page
+      const NAMESPACE_ID = 'f04c3ae0-e1ca-4a9b-b017-e121fedbf29b';
+      const NAMESPACE_NAME = 'fintech';
+      const FULL_NAMESPACE_ID = `${NAMESPACE_NAME}_${NAMESPACE_ID}`;
+      const response = await fetch(`https://brmh.in/drive/folders/${userId}?parentId=ROOT&limit=100&namespaceId=${FULL_NAMESPACE_ID}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) return;
+      const driveResponse = await response.json();
+      type DriveItem = {
+        id?: string;
+        name?: string;
+        description?: string;
+        createdAt?: string;
+        type?: string;
+        [key: string]: unknown;
+      };
+      let driveFolders: DriveItem[] = [];
+      if (Array.isArray(driveResponse)) {
+        driveFolders = driveResponse;
+      } else if (driveResponse && Array.isArray(driveResponse.items)) {
+        driveFolders = driveResponse.items;
+      } else if (driveResponse && Array.isArray(driveResponse.folders)) {
+        driveFolders = driveResponse.folders;
+      } else if (driveResponse && Array.isArray(driveResponse.files)) {
+        driveFolders = driveResponse.files;
       }
+      const mapped: EntityItem[] = driveFolders
+        .filter((item: DriveItem) => Boolean(item && item.type === 'folder' && item.id && item.name))
+        .map((folder: DriveItem) => ({
+          id: String(folder.id),
+          name: String(folder.name),
+          description: (folder.description as string) || '',
+          createdAt: folder.createdAt ? String(folder.createdAt) : undefined,
+        }));
+      setEntities(mapped);
     } catch (error) {
       console.error('Failed to refresh entities:', error);
     }
